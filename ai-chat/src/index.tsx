@@ -333,10 +333,12 @@ function EmptyState() {
 
 let chatApi: XplorerAPI;
 
+// Module-level messages — immune to sandbox hook issues
+let _aiChatMessages: ChatMessage[] = [];
+
 function AIChatPanel(_props: SidebarRenderProps) {
-  const messagesRef = React.useRef<ChatMessage[]>([]);
   const [, _forceRender] = React.useState(0);
-  const messages = messagesRef.current;
+  const messages = _aiChatMessages;
   const [input, setInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [models, setModels] = React.useState<AIModel[]>([]);
@@ -403,13 +405,13 @@ function AIChatPanel(_props: SidebarRenderProps) {
     if (!text || isLoading || !chatApi) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text, timestamp: Date.now() };
-    messagesRef.current = [...messagesRef.current, userMsg];
+    _aiChatMessages = [..._aiChatMessages, userMsg];
     _forceRender((n) => n + 1);
     setInput('');
     setIsLoading(true);
 
     try {
-      const conversationHistory = [...messagesRef.current].map((m) => ({
+      const conversationHistory = [..._aiChatMessages].map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -422,7 +424,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
         timestamp: Date.now(),
         model: selectedModel,
       };
-      messagesRef.current = [...messagesRef.current, assistantMsg];
+      _aiChatMessages = [..._aiChatMessages, assistantMsg];
       _forceRender((n) => n + 1);
     } catch (err: unknown) {
       const errorMsg: ChatMessage = {
@@ -430,7 +432,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
         content: `Error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       };
-      messagesRef.current = [...messagesRef.current, errorMsg];
+      _aiChatMessages = [..._aiChatMessages, errorMsg];
       _forceRender((n) => n + 1);
     } finally {
       setIsLoading(false);
@@ -445,7 +447,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
   };
 
   const clearMessages = () => {
-    messagesRef.current = [];
+    _aiChatMessages = [];
     _forceRender((n) => n + 1);
   };
 

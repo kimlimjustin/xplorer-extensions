@@ -1,347 +1,119 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React from 'react';
 import { Sidebar, Command, useCurrentPath, useSelectedFiles, type XplorerAPI } from '@xplorer/extension-sdk';
 
 let api: XplorerAPI;
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-}
+// Module-level state — survives sandbox re-renders, no hooks needed
+let _messages: Array<{ id: string; role: string; content: string }> = [];
+let _isLoading = false;
+let _input = '';
+let _rerender: (() => void) | null = null;
 
-const s = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    height: '100%',
-    color: 'var(--xp-text, #c0caf5)',
-    fontSize: 13,
-  },
-  header: {
-    padding: '10px 12px',
-    borderBottom: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    background: 'linear-gradient(135deg, #d97706, #f59e0b)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    fontSize: 11,
-    color: '#fff',
-    fontWeight: 700 as const,
-  },
-  headerTitle: {
-    fontSize: 12,
-    fontWeight: 600 as const,
-  },
-  messages: {
-    flex: 1,
-    overflow: 'auto' as const,
-    padding: '8px 0',
-  },
-  message: {
-    padding: '6px 12px',
-    fontSize: 12,
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-word' as const,
-  },
-  userMsg: {
-    color: 'var(--xp-text, #c0caf5)',
-    backgroundColor: 'rgba(122, 162, 247, 0.08)',
-    borderLeft: '2px solid var(--xp-blue, #7aa2f7)',
-    margin: '2px 0',
-  },
-  assistantMsg: {
-    color: 'var(--xp-text, #c0caf5)',
-    margin: '2px 0',
-  },
-  systemMsg: {
-    color: 'var(--xp-text-muted, #565f89)',
-    fontSize: 11,
-    fontStyle: 'italic' as const,
-    margin: '2px 0',
-    padding: '4px 12px',
-  },
-  inputArea: {
-    borderTop: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    padding: '8px 10px',
-    display: 'flex',
-    gap: 6,
-  },
-  input: {
-    flex: 1,
-    padding: '7px 10px',
-    fontSize: 12,
-    borderRadius: 6,
-    border: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    backgroundColor: 'rgba(var(--xp-bg-rgb, 26, 27, 38), 0.5)',
-    color: 'var(--xp-text, #c0caf5)',
-    outline: 'none',
-    fontFamily: 'inherit',
-    resize: 'none' as const,
-  },
-  sendBtn: {
-    padding: '7px 12px',
-    fontSize: 12,
-    fontWeight: 500 as const,
-    borderRadius: 6,
-    border: 'none',
-    cursor: 'pointer',
-    backgroundColor: 'rgba(217, 119, 6, 0.85)',
-    color: '#fff',
-    flexShrink: 0,
-    transition: 'opacity 0.15s',
-  },
-  context: {
-    padding: '4px 12px',
-    fontSize: 10,
-    color: 'var(--xp-text-muted, #565f89)',
-    borderBottom: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.3)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    overflow: 'hidden',
-  },
-  empty: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    gap: 12,
-    padding: 24,
-    textAlign: 'center' as const,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: 600 as const,
-    color: 'var(--xp-text, #c0caf5)',
-  },
-  emptyDesc: {
-    fontSize: 12,
-    color: 'var(--xp-text-muted, #565f89)',
-    lineHeight: 1.5,
-  },
-  suggestion: {
-    padding: '6px 12px',
-    fontSize: 11,
-    borderRadius: 6,
-    border: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.4)',
-    backgroundColor: 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.15)',
-    cursor: 'pointer',
-    color: 'var(--xp-text-muted, #565f89)',
-    transition: 'all 0.1s',
-    textAlign: 'left' as const,
-  },
+const notify = () => { if (_rerender) _rerender(); };
+
+const addMsg = (role: string, content: string) => {
+  _messages = [..._messages, { id: `${Date.now()}-${Math.random()}`, role, content }];
+  notify();
 };
 
-const SUGGESTIONS = [
-  'Explain the selected file',
-  'Find bugs in this code',
-  'Refactor for readability',
-  'Add error handling',
-  'Write tests for this',
-];
+const sendMessage = async (text: string, currentPath: string, selectedFiles: Array<{ name: string; path: string }>) => {
+  const msg = text.trim();
+  if (!msg || _isLoading) return;
+  _input = '';
+  addMsg('user', msg);
+  _isLoading = true;
+  notify();
 
-const ClaudeCodePanel: React.FC = () => {
+  try {
+    const history = _messages.filter((m) => m.role !== 'system').slice(-10);
+    const aiMessages = [
+      { role: 'system', content: `You are Claude Code, an AI assistant in Xplorer. Path: ${currentPath}. ${selectedFiles.length > 0 ? `Files: ${selectedFiles.map((f) => f.name).join(', ')}` : ''}. Be concise.` },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: msg },
+    ];
+    const fileCtx = selectedFiles.length > 0 ? { path: selectedFiles[0].path } : currentPath ? { path: currentPath } : undefined;
+    const response = await api.ai.chat('', aiMessages, fileCtx);
+    addMsg('assistant', response);
+  } catch (err: unknown) {
+    addMsg('system', `Error: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    _isLoading = false;
+    notify();
+  }
+};
+
+const SUGGESTIONS = ['Explain the selected file', 'Find bugs in this code', 'Refactor for readability', 'Add error handling', 'Write tests for this'];
+
+const st = {
+  box: { display: 'flex', flexDirection: 'column' as const, height: '100%', color: 'var(--xp-text, #c0caf5)', fontSize: 13 },
+  hdr: { padding: '10px 12px', borderBottom: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)', display: 'flex', alignItems: 'center', gap: 8 },
+  icon: { width: 20, height: 20, borderRadius: 4, background: 'linear-gradient(135deg, #d97706, #f59e0b)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, color: '#fff', fontWeight: 700 as const },
+  msgs: { flex: 1, overflow: 'auto' as const, padding: '8px 0' },
+  msg: { padding: '6px 12px', fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const },
+  usr: { backgroundColor: 'rgba(122,162,247,0.08)', borderLeft: '2px solid var(--xp-blue, #7aa2f7)', margin: '2px 0' },
+  ast: { margin: '2px 0' },
+  sys: { color: 'var(--xp-text-muted, #565f89)', fontSize: 11, fontStyle: 'italic' as const, margin: '2px 0', padding: '4px 12px' },
+  inp: { borderTop: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)', padding: '8px 10px', display: 'flex', gap: 6 },
+  ta: { flex: 1, padding: '7px 10px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(var(--xp-border-rgb), 0.5)', backgroundColor: 'rgba(var(--xp-bg-rgb), 0.5)', color: 'var(--xp-text)', outline: 'none', fontFamily: 'inherit', resize: 'none' as const },
+  btn: { padding: '7px 12px', fontSize: 12, fontWeight: 500 as const, borderRadius: 6, border: 'none', cursor: 'pointer', backgroundColor: 'rgba(217,119,6,0.85)', color: '#fff', flexShrink: 0 },
+  sug: { padding: '6px 12px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(var(--xp-border-rgb), 0.4)', backgroundColor: 'rgba(var(--xp-border-rgb), 0.15)', cursor: 'pointer', color: 'var(--xp-text-muted)', textAlign: 'left' as const },
+};
+
+const ClaudeCodePanel = () => {
   const currentPath = useCurrentPath();
   const selectedFiles = useSelectedFiles();
-  const messagesRef = useRef<Message[]>([]);
-  const [, forceUpdate] = useState(0);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Force re-render trick: increment counter on state changes
+  const [, setTick] = React.useState(0);
+  _rerender = () => setTick((n) => n + 1);
 
-  const messages = messagesRef.current;
+  const msgs = _messages; // plain array, never undefined
+  const loading = _isLoading;
 
-  const addMessage = useCallback((role: Message['role'], content: string) => {
-    messagesRef.current = [
-      ...messagesRef.current,
-      { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: Date.now() },
-    ];
-    forceUpdate((n) => n + 1);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-  }, []);
+  const doSend = (text?: string) => {
+    sendMessage(text || _input, currentPath, selectedFiles);
+  };
 
-  const handleSend = useCallback(async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || isLoading) return;
-
-    setInput('');
-    addMessage('user', msg);
-    setIsLoading(true);
-
-    try {
-      const history = messagesRef.current.filter((m) => m.role !== 'system').slice(-10);
-      const aiMessages = [
-        {
-          role: 'system',
-          content: `You are Claude Code, an AI coding assistant integrated into Xplorer file manager. The user is currently in: ${currentPath}. ${selectedFiles.length > 0 ? `Selected files: ${selectedFiles.map((f) => f.name).join(', ')}` : ''}. Help with coding tasks, file analysis, bug fixes, and refactoring. Be concise.`,
-        },
-        ...history.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user', content: msg },
-      ];
-
-      const fileCtx = selectedFiles.length > 0
-        ? { path: selectedFiles[0].path }
-        : currentPath ? { path: currentPath } : undefined;
-      const response = await api.ai.chat('', aiMessages, fileCtx);
-      addMessage('assistant', response);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to get response';
-      if (errMsg.includes('Ollama') || errMsg.includes('connection')) {
-        addMessage('system', 'Claude Code requires Ollama running locally. Start it with: ollama serve');
-      } else {
-        addMessage('system', `Error: ${errMsg}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, isLoading, currentPath, selectedFiles, addMessage]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
-
-  if ((!messages || messages.length === 0) && !isLoading) {
+  if (msgs.length === 0 && !loading) {
     return (
-      <div style={s.container}>
-        <div style={s.header}>
-          <div style={s.headerIcon}>C</div>
-          <span style={s.headerTitle}>Claude Code</span>
-        </div>
-        <div style={s.empty}>
-          <div style={s.headerIcon}>C</div>
-          <div style={s.emptyTitle}>Claude Code</div>
-          <div style={s.emptyDesc}>
-            Ask Claude to edit files, explain code, fix bugs, and more.
-            Select files in the explorer for context.
-          </div>
+      <div style={st.box}>
+        <div style={st.hdr}><div style={st.icon}>C</div><span style={{ fontSize: 12, fontWeight: 600 }}>Claude Code</span></div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, padding: 24, textAlign: 'center' }}>
+          <div style={st.icon}>C</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Claude Code</div>
+          <div style={{ fontSize: 12, color: 'var(--xp-text-muted)', lineHeight: 1.5 }}>Ask Claude to edit files, explain code, fix bugs, and more.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 260 }}>
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                style={s.suggestion}
-                onClick={() => handleSend(suggestion)}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.3)';
-                  e.currentTarget.style.color = 'var(--xp-text, #c0caf5)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.15)';
-                  e.currentTarget.style.color = 'var(--xp-text-muted, #565f89)';
-                }}
-              >
-                {suggestion}
-              </button>
-            ))}
+            {SUGGESTIONS.map((s) => <button key={s} style={st.sug} onClick={() => doSend(s)}>{s}</button>)}
           </div>
         </div>
-        <div style={s.inputArea}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Claude..."
-            rows={1}
-            style={s.input}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isLoading}
-            style={{ ...s.sendBtn, opacity: !input.trim() ? 0.5 : 1 }}
-          >
-            Send
-          </button>
+        <div style={st.inp}>
+          <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }} placeholder="Ask Claude..." style={st.ta as React.CSSProperties} />
+          <button onClick={() => doSend()} disabled={!_input.trim()} style={{ ...st.btn, opacity: _input.trim() ? 1 : 0.5 }}>Send</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={s.container}>
-      <div style={s.header}>
-        <div style={s.headerIcon}>C</div>
-        <span style={s.headerTitle}>Claude Code</span>
-        <button
-          onClick={() => { messagesRef.current = []; forceUpdate((n) => n + 1); }}
-          style={{
-            marginLeft: 'auto', padding: '2px 8px', fontSize: 10,
-            borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)',
-            backgroundColor: 'transparent', color: 'var(--xp-text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          Clear
-        </button>
+    <div style={st.box}>
+      <div style={st.hdr}>
+        <div style={st.icon}>C</div>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Claude Code</span>
+        <button onClick={() => { _messages = []; _isLoading = false; setTick((n) => n + 1); }} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 10, borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)', backgroundColor: 'transparent', color: 'var(--xp-text-muted)', cursor: 'pointer' }}>Clear</button>
       </div>
-
-      {/* Context bar */}
       {(selectedFiles.length > 0 || currentPath) && (
-        <div style={s.context}>
-          <span style={{ opacity: 0.5 }}>ctx:</span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selectedFiles.length > 0
-              ? selectedFiles.map((f) => f.name).join(', ')
-              : currentPath?.split(/[/\\]/).pop()}
-          </span>
+        <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--xp-text-muted)', borderBottom: '1px solid rgba(var(--xp-border-rgb), 0.3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          ctx: {selectedFiles.length > 0 ? selectedFiles.map((f) => f.name).join(', ') : currentPath?.split(/[/\\]/).pop()}
         </div>
       )}
-
-      {/* Messages */}
-      <div style={s.messages}>
-        {(messages || []).map((msg) => (
-          <div
-            key={msg.id}
-            style={{
-              ...s.message,
-              ...(msg.role === 'user' ? s.userMsg : msg.role === 'assistant' ? s.assistantMsg : s.systemMsg),
-            }}
-          >
-            {msg.content}
-          </div>
+      <div style={st.msgs}>
+        {msgs.map((m) => (
+          <div key={m.id} style={{ ...st.msg, ...(m.role === 'user' ? st.usr : m.role === 'assistant' ? st.ast : st.sys) }}>{m.content}</div>
         ))}
-        {isLoading && (
-          <div style={{ ...s.message, ...s.assistantMsg, opacity: 0.5 }}>
-            Thinking...
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+        {loading && <div style={{ ...st.msg, ...st.ast, opacity: 0.5 }}>Thinking...</div>}
       </div>
-
-      {/* Input */}
-      <div style={s.inputArea}>
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask Claude..."
-          rows={1}
-          style={s.input}
-          disabled={isLoading}
-        />
-        <button
-          onClick={() => handleSend()}
-          disabled={!input.trim() || isLoading}
-          style={{ ...s.sendBtn, opacity: !input.trim() || isLoading ? 0.5 : 1 }}
-        >
-          {isLoading ? '...' : 'Send'}
-        </button>
+      <div style={st.inp}>
+        <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) doSend(); }} placeholder="Ask Claude..." style={st.ta as React.CSSProperties} disabled={loading} />
+        <button onClick={() => doSend()} disabled={!_input.trim() || loading} style={{ ...st.btn, opacity: !_input.trim() || loading ? 0.5 : 1 }}>{loading ? '...' : 'Send'}</button>
       </div>
     </div>
   );
@@ -352,11 +124,9 @@ Sidebar.register({
   title: 'Claude Code',
   icon: 'terminal',
   location: 'right',
-  permissions: ['file:read', 'ui:panels'],
+  permissions: ['file:read', 'ui:panels', 'ai:chat', 'ai:read'],
   render: () => <ClaudeCodePanel />,
-  onActivate: (xplorerApi) => {
-    api = xplorerApi;
-  },
+  onActivate: (xplorerApi) => { api = xplorerApi; },
 });
 
 Command.register({
@@ -364,7 +134,5 @@ Command.register({
   title: 'Open Claude Code',
   shortcut: 'ctrl+shift+c',
   permissions: ['ui:panels'],
-  action: async () => {
-    api?.ui.showMessage('Claude Code panel is available in the right sidebar', 'info');
-  },
+  action: async () => { api?.ui.showMessage('Claude Code panel is in the right sidebar', 'info'); },
 });
