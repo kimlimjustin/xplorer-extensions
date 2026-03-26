@@ -155,21 +155,22 @@ const SUGGESTIONS = [
 const ClaudeCodePanel: React.FC = () => {
   const currentPath = useCurrentPath();
   const selectedFiles = useSelectedFiles();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef<Message[]>([]);
+  const [, forceUpdate] = useState(0);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const messages = messagesRef.current;
 
   const addMessage = useCallback((role: Message['role'], content: string) => {
-    setMessages((prev) => [
-      ...prev,
+    messagesRef.current = [
+      ...messagesRef.current,
       { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: Date.now() },
-    ]);
+    ];
+    forceUpdate((n) => n + 1);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
   }, []);
 
   const handleSend = useCallback(async (text?: string) => {
@@ -181,11 +182,7 @@ const ClaudeCodePanel: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const context = selectedFiles.length > 0
-        ? selectedFiles.map((f) => f.path).join(', ')
-        : currentPath;
-
-      const history = (messages || []).filter((m) => m.role !== 'system').slice(-10);
+      const history = messagesRef.current.filter((m) => m.role !== 'system').slice(-10);
       const aiMessages = [
         {
           role: 'system',
@@ -210,7 +207,7 @@ const ClaudeCodePanel: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, currentPath, selectedFiles, addMessage]);
+  }, [input, isLoading, currentPath, selectedFiles, addMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -219,7 +216,7 @@ const ClaudeCodePanel: React.FC = () => {
     }
   }, [handleSend]);
 
-  if (messages.length === 0 && !isLoading) {
+  if ((!messages || messages.length === 0) && !isLoading) {
     return (
       <div style={s.container}>
         <div style={s.header}>
@@ -281,7 +278,7 @@ const ClaudeCodePanel: React.FC = () => {
         <div style={s.headerIcon}>C</div>
         <span style={s.headerTitle}>Claude Code</span>
         <button
-          onClick={() => setMessages([])}
+          onClick={() => { messagesRef.current = []; forceUpdate((n) => n + 1); }}
           style={{
             marginLeft: 'auto', padding: '2px 8px', fontSize: 10,
             borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)',
@@ -307,7 +304,7 @@ const ClaudeCodePanel: React.FC = () => {
 
       {/* Messages */}
       <div style={s.messages}>
-        {messages.map((msg) => (
+        {(messages || []).map((msg) => (
           <div
             key={msg.id}
             style={{
