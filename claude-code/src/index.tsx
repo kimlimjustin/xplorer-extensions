@@ -185,19 +185,20 @@ const ClaudeCodePanel: React.FC = () => {
         ? selectedFiles.map((f) => f.path).join(', ')
         : currentPath;
 
+      const history = (messages || []).filter((m) => m.role !== 'system').slice(-10);
       const aiMessages = [
         {
           role: 'system',
           content: `You are Claude Code, an AI coding assistant integrated into Xplorer file manager. The user is currently in: ${currentPath}. ${selectedFiles.length > 0 ? `Selected files: ${selectedFiles.map((f) => f.name).join(', ')}` : ''}. Help with coding tasks, file analysis, bug fixes, and refactoring. Be concise.`,
         },
-        ...messages.filter((m) => m.role !== 'system').slice(-10).map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
+        ...history.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: msg },
       ];
 
-      const response = await api.ai.chat('', aiMessages, context);
+      const fileCtx = selectedFiles.length > 0
+        ? { path: selectedFiles[0].path }
+        : currentPath ? { path: currentPath } : undefined;
+      const response = await api.ai.chat('', aiMessages, fileCtx);
       addMessage('assistant', response);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Failed to get response';
