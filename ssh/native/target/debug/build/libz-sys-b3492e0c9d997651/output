@@ -1,0 +1,84 @@
+cargo:rerun-if-env-changed=LIBZ_SYS_STATIC
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-changed=zng/cmake.rs
+cargo:rerun-if-changed=zng/cc.rs
+note, vcpkg did not find zlib: Could not find Vcpkg tree: No vcpkg installation found. Set the VCPKG_ROOT environment variable or run 'vcpkg integrate install'
+OPT_LEVEL = Some(0)
+TARGET = Some(x86_64-pc-windows-msvc)
+CARGO_ENCODED_RUSTFLAGS = Some()
+cargo:rerun-if-env-changed=VCINSTALLDIR
+VCINSTALLDIR = None
+cargo:rerun-if-env-changed=VSTEL_MSBuildProjectFullPath
+VSTEL_MSBuildProjectFullPath = None
+cargo:rerun-if-env-changed=VCToolsVersion
+VCToolsVersion = None
+cargo:rerun-if-env-changed=VSCMD_ARG_VCVARS_SPECTRE
+VSCMD_ARG_VCVARS_SPECTRE = None
+cargo:rerun-if-env-changed=WindowsSdkDir
+WindowsSdkDir = None
+cargo:rerun-if-env-changed=WindowsSDKVersion
+WindowsSDKVersion = None
+cargo:rerun-if-env-changed=LIB
+LIB = None
+PATH = Some(D:\sortila\examples\ssh-extension\native\target\debug\deps;D:\sortila\examples\ssh-extension\native\target\debug;C:\Users\Justin Kimlim\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\x86_64-pc-windows-msvc\lib;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\Justin Kimlim\bin;C:\Python312\Scripts;C:\Program Files\Eclipse Foundation\jdk-8.0.302.8-hotspot\bin;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Python312\Scripts\;C:\Python312\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\dotnet\;C:\Program Files\Microsoft VS Code\bin;C:\ProgramData\chocolatey\bin;C:\Program Files\Git\cmd;C:\Program Files\Microsoft\Web Platform Installer\;C:\Program Files (x86)\Microsoft ASP.NET\ASP.NET Web Pages\v1.0\;C:\Program Files\Microsoft SQL Server\110\Tools\Binn\;C:\Program Files (x86)\Windows Kits\8.1\Windows Performance Toolkit\;C:\Users\Justin Kimlim\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\CMake\bin;c:\Users\Justin Kimlim\AppData\Local\Programs\cursor\resources\app\bin;.;C:\Program Files\nodejs;.;C:\Program Files\nodejs;.;C:\Program Files\nodejs;C:\Program Files\Amazon\AWSCLIV2\;D:\matlab\New folder\bin;C:\Users\Justin Kimlim\AppData\Local\pnpm;C:\Program Files\Google\Chrome\Application;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Python312\Scripts\;C:\Python312\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\dotnet\;C:\Program Files\Microsoft VS Code\bin;C:\ProgramData\chocolatey\bin;C:\Program Files\Git\cmd;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files\Microsoft\Web Platform Installer\;C:\Program Files (x86)\Microsoft ASP.NET\ASP.NET Web Pages\v1.0\;C:\Program Files\Microsoft SQL Server\110\Tools\Binn\;C:\Program Files (x86)\Windows Kits\8.1\Windows Performance Toolkit\;C:\Users\Justin Kimlim\.cargo\bin;C:\Users\Justin Kimlim\AppData\Local\Microsoft\WindowsApps;C:\Users\Justin Kimlim\AppData\Roaming\npm;C:\Users\Justin Kimlim\AppData\Roaming\npm\node_modules\yarn\bin;C:\Users\Justin Kimlim\AppData\Local\GitHubDesktop\bin;C:\ProgramData\mingw64\mingw64\bin;D:\flutter\flutter\bin;C:\Users\Justin Kim;C:\Program Files\Xplorer\;C:\Users\Justin Kimlim\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Users\Justin Kimlim\AppData\Local\Microsoft\WinGet\Packages\Schniz.fnm_Microsoft.Winget.Source_8wekyb3d8bbwe;C:\Users\Justin Kimlim\AppData\Roaming\fnm\node-versions\v22.14.0\installation;C:\Program Files\Java\jdk-23\bin;C:\ProgramData\chocolatey\lib\deno;C:\bin;C:\Apps\Scripts;C:\Users\Justin Kimlim\AppData\Local\JetBrains\Toolbox\scripts;C:\Windows\Microsoft.NET\Framework\v4.0.30319;C:\Users\Justin Kimlim\AppData\Local\Programs\Ollama;D:\models;C:\Users\Justin Kimlim\AppData\Local\Programs\cursor\resources\app\bin;C:\sqlite;C:\Program Files\PostgreSQL\17\bin;C:\terraform_1.12.2_windows_amd64;C:\Users\Justin Kimlim\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin)
+cargo:rerun-if-env-changed=INCLUDE
+INCLUDE = None
+HOST = Some(x86_64-pc-windows-msvc)
+cargo:rerun-if-env-changed=CC_x86_64-pc-windows-msvc
+CC_x86_64-pc-windows-msvc = None
+cargo:rerun-if-env-changed=CC_x86_64_pc_windows_msvc
+CC_x86_64_pc_windows_msvc = None
+cargo:rerun-if-env-changed=HOST_CC
+HOST_CC = None
+cargo:rerun-if-env-changed=CC
+CC = None
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+CARGO_CFG_TARGET_FEATURE = Some(cmpxchg16b,fxsr,sse,sse2,sse3)
+DEBUG = Some(true)
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_pc_windows_msvc
+CFLAGS_x86_64_pc_windows_msvc = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64-pc-windows-msvc
+CFLAGS_x86_64-pc-windows-msvc = None
+cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT
+adler32.c
+compress.c
+crc32.c
+deflate.c
+infback.c
+inffast.c
+inflate.c
+inftrees.c
+trees.c
+uncompr.c
+zutil.c
+gzclose.c
+gzlib.c
+gzread.c
+gzwrite.c
+cargo:rerun-if-env-changed=AR_x86_64-pc-windows-msvc
+AR_x86_64-pc-windows-msvc = None
+cargo:rerun-if-env-changed=AR_x86_64_pc_windows_msvc
+AR_x86_64_pc_windows_msvc = None
+cargo:rerun-if-env-changed=HOST_AR
+HOST_AR = None
+cargo:rerun-if-env-changed=AR
+AR = None
+cargo:rerun-if-env-changed=ARFLAGS
+ARFLAGS = None
+cargo:rerun-if-env-changed=HOST_ARFLAGS
+HOST_ARFLAGS = None
+cargo:rerun-if-env-changed=ARFLAGS_x86_64_pc_windows_msvc
+ARFLAGS_x86_64_pc_windows_msvc = None
+cargo:rerun-if-env-changed=ARFLAGS_x86_64-pc-windows-msvc
+ARFLAGS_x86_64-pc-windows-msvc = None
+cargo:rustc-link-search=native=C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\atlmfc\lib\x64
+cargo:rustc-link-lib=static=z
+cargo:rustc-link-search=native=D:\sortila\examples\ssh-extension\native\target\debug\build\libz-sys-b3492e0c9d997651\out\lib
+cargo:root=D:\sortila\examples\ssh-extension\native\target\debug\build\libz-sys-b3492e0c9d997651\out
+cargo:rustc-link-search=native=D:\sortila\examples\ssh-extension\native\target\debug\build\libz-sys-b3492e0c9d997651\out\lib
+cargo:include=D:\sortila\examples\ssh-extension\native\target\debug\build\libz-sys-b3492e0c9d997651\out/include
