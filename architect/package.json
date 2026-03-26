@@ -17,18 +17,25 @@
     "id": "xplorer-architect",
     "name": "Architecture Visualizer",
     "displayName": "Architecture Visualizer",
-    "description": "Visualize, plan, and edit project architecture as an interactive node graph. Scan existing code, design new features visually, and let AI generate code from your architectural plan.",
-    "version": "1.0.0",
+    "description": "Visualize project architecture as a sidebar tree and interactive graph. Scan your project structure and see it as navigable modules.",
+    "version": "2.0.0",
     "author": "Xplorer Team",
-    "category": "editor",
+    "category": "tool",
     "icon": "layout",
-    "keywords": ["architecture", "visualizer", "graph", "vibe-coding", "planning", "nodes"],
-    "permissions": ["file:read", "file:write", "directory:list", "ui:panels", "ui:notifications"],
+    "keywords": ["architecture", "visualizer", "tree", "graph", "structure"],
+    "permissions": ["file:read", "file:write", "directory:list", "ui:panels"],
     "activationEvents": ["onStartup"],
     "contributes": {
+      "commands": [
+        {
+          "id": "xplorer-architect.generate",
+          "title": "Generate Architecture",
+          "shortcut": "ctrl+shift+a"
+        }
+      ],
       "editors": [
         {
-          "id": "xplorer-architect",
+          "id": "xplorer-architect-editor",
           "extensions": ["xparch"],
           "priority": 50
         }
