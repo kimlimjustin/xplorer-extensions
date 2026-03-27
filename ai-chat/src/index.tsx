@@ -416,7 +416,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
         content: m.content,
       }));
 
-      const response = await chatApi.ai.chat(selectedModel, conversationHistory);
+      const response = await chatApi.ai.chat(conversationHistory);
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',

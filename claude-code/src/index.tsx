@@ -31,8 +31,7 @@ const sendMessage = async (text: string, currentPath: string, selectedFiles: Arr
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: msg },
     ];
-    const fileCtx = selectedFiles.length > 0 ? { path: selectedFiles[0].path } : currentPath ? { path: currentPath } : undefined;
-    const response = await api.ai.chat('', aiMessages, fileCtx);
+    const response = await api.ai.chat(aiMessages);
     addMsg('assistant', response);
   } catch (err: unknown) {
     addMsg('system', `Error: ${err instanceof Error ? err.message : String(err)}`);
