@@ -1,140 +1,183 @@
 import React from 'react';
-import { Sidebar, Command, useCurrentPath, useSelectedFiles, type XplorerAPI } from '@xplorer/extension-sdk';
+import { Sidebar, Command, useCurrentPath, type XplorerAPI } from '@xplorer/extension-sdk';
 
 let api: XplorerAPI;
 
-let _messages: Array<{ id: string; role: string; content: string }> = [];
-let _isLoading = false;
-let _input = '';
+// The Claude Code extension embeds a real PTY running `claude` CLI.
+// It uses the same PTY system as the built-in terminal.
+// The user interacts with Claude Code exactly as they would in a terminal.
+
+const SESSION_ID = 'claude-code-pty';
+let _spawned = false;
+let _output = '';
 let _rerender: (() => void) | null = null;
 
 const notify = () => { if (_rerender) _rerender(); };
 
-const addMsg = (role: string, content: string) => {
-  _messages = [..._messages, { id: `${Date.now()}-${Math.random()}`, role, content }];
-  notify();
-};
-
-const runClaude = async (prompt: string, cwd: string) => {
-  _input = '';
-  addMsg('user', prompt);
-  _isLoading = true;
-  notify();
-
-  try {
-    // Run the actual claude CLI with --print flag
-    const result = await api.commands.execute('execute_command', {
-      command: `claude --print "${prompt.replace(/"/g, '\\"')}"`,
-      working_dir: cwd,
-    });
-
-    if (result && typeof result === 'object') {
-      const r = result as { stdout?: string; stderr?: string; exit_code?: number };
-      if (r.stdout) {
-        addMsg('assistant', r.stdout.trim());
-      } else if (r.stderr) {
-        addMsg('system', r.stderr.trim());
-      } else {
-        addMsg('system', 'No response from Claude CLI');
-      }
-    } else if (typeof result === 'string') {
-      addMsg('assistant', result);
-    } else {
-      addMsg('system', 'No response from Claude CLI');
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('not found') || msg.includes('No such file')) {
-      addMsg('system', 'Claude CLI not found. Install it: npm install -g @anthropic-ai/claude-code');
-    } else {
-      addMsg('system', `Error: ${msg}`);
-    }
-  } finally {
-    _isLoading = false;
-    notify();
-  }
-};
-
-const SUGGESTIONS = ['Explain this project', 'Find bugs in this code', 'Refactor for readability', 'Write tests', 'What does this file do?'];
-
-const st = {
-  box: { display: 'flex', flexDirection: 'column' as const, height: '100%', color: 'var(--xp-text, #c0caf5)', fontSize: 13 },
-  hdr: { padding: '10px 12px', borderBottom: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)', display: 'flex', alignItems: 'center', gap: 8 },
-  icon: { width: 20, height: 20, borderRadius: 4, background: 'linear-gradient(135deg, #d97706, #f59e0b)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, color: '#fff', fontWeight: 700 as const },
-  msgs: { flex: 1, overflow: 'auto' as const, padding: '8px 0' },
-  msg: { padding: '6px 12px', fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const },
-  usr: { backgroundColor: 'rgba(122,162,247,0.08)', borderLeft: '2px solid var(--xp-blue, #7aa2f7)', margin: '2px 0' },
-  ast: { margin: '2px 0' },
-  sys: { color: 'var(--xp-text-muted, #565f89)', fontSize: 11, fontStyle: 'italic' as const, margin: '2px 0', padding: '4px 12px' },
-  inp: { borderTop: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)', padding: '8px 10px', display: 'flex', gap: 6 },
-  ta: { flex: 1, padding: '7px 10px', fontSize: 12, borderRadius: 6, border: '1px solid rgba(var(--xp-border-rgb), 0.5)', backgroundColor: 'rgba(var(--xp-bg-rgb), 0.5)', color: 'var(--xp-text)', outline: 'none', fontFamily: 'inherit', resize: 'none' as const },
-  btn: { padding: '7px 12px', fontSize: 12, fontWeight: 500 as const, borderRadius: 6, border: 'none', cursor: 'pointer', backgroundColor: 'rgba(217,119,6,0.85)', color: '#fff', flexShrink: 0 },
-  sug: { padding: '6px 12px', fontSize: 11, borderRadius: 6, border: '1px solid rgba(var(--xp-border-rgb), 0.4)', backgroundColor: 'rgba(var(--xp-border-rgb), 0.15)', cursor: 'pointer', color: 'var(--xp-text-muted)', textAlign: 'left' as const },
-};
-
 const ClaudeCodePanel = () => {
   const currentPath = useCurrentPath();
-  const selectedFiles = useSelectedFiles();
   const [, setTick] = React.useState(0);
+  const outputRef = React.useRef<HTMLPreElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
   _rerender = () => setTick((n) => n + 1);
 
-  const msgs = _messages;
-  const loading = _isLoading;
+  // Spawn claude CLI on first render
+  React.useEffect(() => {
+    if (_spawned) return;
+    _spawned = true;
 
-  const doSend = (text?: string) => {
-    const prompt = text || _input;
-    if (!prompt.trim() || loading) return;
+    const cwd = currentPath || '.';
 
-    // Add file context to the prompt if files are selected
-    let fullPrompt = prompt;
-    if (selectedFiles.length > 0) {
-      fullPrompt = `${prompt}\n\nFiles: ${selectedFiles.map((f) => f.path).join(', ')}`;
-    }
+    // Use the PTY commands via Tauri invoke
+    const spawn = async () => {
+      try {
+        // Import transport dynamically to call Tauri commands directly
+        const { invoke } = await import('@tauri-apps/api/core');
 
-    runClaude(fullPrompt, currentPath || '.');
+        // Spawn a PTY running claude in interactive mode
+        await invoke('pty_spawn', {
+          sessionId: SESSION_ID,
+          cwd,
+          cols: 80,
+          rows: 24,
+        });
+
+        // Write "claude\n" to start the CLI
+        await invoke('pty_write', { sessionId: SESSION_ID, data: 'claude\n' });
+
+        // Listen to output
+        const { listen } = await import('@tauri-apps/api/event');
+        listen('pty-output', (event: { payload: { session_id: string; data: string } }) => {
+          if (event.payload.session_id === SESSION_ID) {
+            _output += event.payload.data;
+            // Keep last 50KB of output
+            if (_output.length > 50000) _output = _output.slice(-40000);
+            notify();
+            setTimeout(() => {
+              if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
+            }, 30);
+          }
+        });
+
+        listen('pty-exit', (event: { payload: string }) => {
+          if (event.payload === SESSION_ID) {
+            _output += '\n[Claude Code session ended]\n';
+            _spawned = false;
+            notify();
+          }
+        });
+      } catch (err) {
+        _output = `Failed to start Claude Code: ${err instanceof Error ? err.message : String(err)}\n\nMake sure Claude Code CLI is installed:\n  npm install -g @anthropic-ai/claude-code`;
+        notify();
+      }
+    };
+
+    spawn();
+
+    return () => {
+      // Don't kill on unmount — keep session alive for re-opening
+    };
+  }, [currentPath]);
+
+  // Send input to the PTY
+  const sendInput = async (text: string) => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('pty_write', { sessionId: SESSION_ID, data: text });
+    } catch { /* ignore */ }
   };
 
-  if (msgs.length === 0 && !loading) {
-    return (
-      <div style={st.box}>
-        <div style={st.hdr}><div style={st.icon}>C</div><span style={{ fontSize: 12, fontWeight: 600 }}>Claude Code</span></div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, padding: 24, textAlign: 'center' }}>
-          <div style={st.icon}>C</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Claude Code</div>
-          <div style={{ fontSize: 12, color: 'var(--xp-text-muted)', lineHeight: 1.5 }}>Runs the real Claude Code CLI. Select files for context.</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 260 }}>
-            {SUGGESTIONS.map((s) => <button key={s} style={st.sug} onClick={() => doSend(s)}>{s}</button>)}
-          </div>
-        </div>
-        <div style={st.inp}>
-          <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }} placeholder="Ask Claude Code..." style={st.ta as React.CSSProperties} />
-          <button onClick={() => doSend()} disabled={!_input.trim()} style={{ ...st.btn, opacity: _input.trim() ? 1 : 0.5 }}>Run</button>
-        </div>
-      </div>
-    );
-  }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const val = (e.target as HTMLInputElement).value;
+      sendInput(val + '\n');
+      (e.target as HTMLInputElement).value = '';
+    }
+  };
+
+  // Strip ANSI escape codes for display
+  const cleanOutput = _output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
 
   return (
-    <div style={st.box}>
-      <div style={st.hdr}>
-        <div style={st.icon}>C</div>
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100%',
+      color: 'var(--xp-text, #c0caf5)', fontSize: 12,
+      backgroundColor: 'var(--xp-bg, #1a1b26)',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '8px 12px',
+        borderBottom: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <div style={{
+          width: 18, height: 18, borderRadius: 4,
+          background: 'linear-gradient(135deg, #d97706, #f59e0b)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, color: '#fff', fontWeight: 700,
+        }}>C</div>
         <span style={{ fontSize: 12, fontWeight: 600 }}>Claude Code</span>
-        <button onClick={() => { _messages = []; _isLoading = false; setTick((n) => n + 1); }} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 10, borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)', backgroundColor: 'transparent', color: 'var(--xp-text-muted)', cursor: 'pointer' }}>Clear</button>
+        <button
+          onClick={() => {
+            _output = '';
+            _spawned = false;
+            notify();
+            // Kill and respawn
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+              invoke('pty_kill', { sessionId: SESSION_ID }).catch(() => {});
+            });
+          }}
+          style={{
+            marginLeft: 'auto', padding: '2px 8px', fontSize: 10,
+            borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)',
+            backgroundColor: 'transparent', color: 'var(--xp-text-muted)',
+            cursor: 'pointer',
+          }}
+        >Restart</button>
       </div>
-      {(selectedFiles.length > 0 || currentPath) && (
-        <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--xp-text-muted)', borderBottom: '1px solid rgba(var(--xp-border-rgb), 0.3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          cwd: {currentPath?.split(/[/\\]/).pop()} {selectedFiles.length > 0 ? `| ${selectedFiles.length} files` : ''}
-        </div>
-      )}
-      <div style={st.msgs}>
-        {msgs.map((m) => (
-          <div key={m.id} style={{ ...st.msg, ...(m.role === 'user' ? st.usr : m.role === 'assistant' ? st.ast : st.sys) }}>{m.content}</div>
-        ))}
-        {loading && <div style={{ ...st.msg, ...st.ast, opacity: 0.5 }}>Running claude --print...</div>}
-      </div>
-      <div style={st.inp}>
-        <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) doSend(); }} placeholder="Ask Claude Code..." style={st.ta as React.CSSProperties} disabled={loading} />
-        <button onClick={() => doSend()} disabled={!_input.trim() || loading} style={{ ...st.btn, opacity: !_input.trim() || loading ? 0.5 : 1 }}>{loading ? '...' : 'Run'}</button>
+
+      {/* Output */}
+      <pre ref={outputRef} style={{
+        flex: 1, margin: 0, padding: '8px 12px',
+        overflow: 'auto', fontFamily: '"SF Mono", "Fira Code", Menlo, monospace',
+        fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        color: 'var(--xp-text, #c0caf5)',
+        backgroundColor: 'transparent',
+      }}>
+        {cleanOutput || 'Starting Claude Code...'}
+      </pre>
+
+      {/* Input */}
+      <div style={{
+        padding: '8px 10px',
+        borderTop: '1px solid rgba(var(--xp-border-rgb, 41,46,66), 0.5)',
+        display: 'flex', gap: 6,
+      }}>
+        <input
+          ref={inputRef}
+          onKeyDown={handleKeyDown}
+          placeholder="Type a message to Claude..."
+          style={{
+            flex: 1, padding: '7px 10px', fontSize: 12, borderRadius: 6,
+            border: '1px solid rgba(var(--xp-border-rgb), 0.5)',
+            backgroundColor: 'rgba(var(--xp-bg-rgb), 0.5)',
+            color: 'var(--xp-text)', outline: 'none',
+            fontFamily: '"SF Mono", "Fira Code", Menlo, monospace',
+          }}
+        />
+        <button
+          onClick={() => {
+            if (inputRef.current) {
+              sendInput(inputRef.current.value + '\n');
+              inputRef.current.value = '';
+            }
+          }}
+          style={{
+            padding: '7px 12px', fontSize: 12, fontWeight: 500, borderRadius: 6,
+            border: 'none', cursor: 'pointer',
+            backgroundColor: 'rgba(217,119,6,0.85)', color: '#fff',
+          }}
+        >Send</button>
       </div>
     </div>
   );
