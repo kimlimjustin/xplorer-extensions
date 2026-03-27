@@ -3,96 +3,106 @@ import { Sidebar, Command, useCurrentPath, useSelectedFiles, type XplorerAPI } f
 
 let api: XplorerAPI;
 
-interface Msg { id: string; role: 'user' | 'assistant' | 'system'; content: string; streaming?: boolean; }
+interface Msg { id: string; role: 'user' | 'assistant'; content: string; done?: boolean; }
 
+const SESSION = 'claude-code-live';
 let _msgs: Msg[] = [];
 let _loading = false;
 let _input = '';
+let _spawned = false;
+let _currentId = '';
+let _buffer = '';
 let _rerender: (() => void) | null = null;
-let _sessionContinue = false;
-let _currentStreamId = '';
-let _unlistenOutput: (() => void) | null = null;
-let _unlistenExit: (() => void) | null = null;
+let _listening = false;
 
-const SESSION = 'claude-code-stream';
 const notify = () => { if (_rerender) _rerender(); };
 
-const push = (role: Msg['role'], content: string, streaming = false): string => {
-  const id = `${Date.now()}-${Math.random()}`;
-  _msgs = [..._msgs, { id, role, content, streaming }];
-  notify();
-  return id;
-};
+const spawnClaude = async (cwd: string) => {
+  if (_spawned) return;
+  _spawned = true;
 
-const updateMsg = (id: string, content: string, streaming = true) => {
-  _msgs = _msgs.map((m) => m.id === id ? { ...m, content, streaming } : m);
-  notify();
-};
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('pty_kill', { sessionId: SESSION }).catch(() => {});
+    await invoke('pty_spawn', { sessionId: SESSION, cwd, cols: 120, rows: 40 });
+    // Start claude in interactive mode
+    await invoke('pty_write', { sessionId: SESSION, data: 'claude\n' });
 
-const setupListeners = async () => {
-  if (_unlistenOutput) return;
-  const { listen } = await import('@tauri-apps/api/event');
+    if (!_listening) {
+      _listening = true;
+      const { listen } = await import('@tauri-apps/api/event');
 
-  _unlistenOutput = await listen('pty-output', (event: { payload: { session_id: string; data: string } }) => {
-    if (event.payload.session_id !== SESSION) return;
-    const data = event.payload.data;
+      await listen('pty-output', (e: { payload: { session_id: string; data: string } }) => {
+        if (e.payload.session_id !== SESSION) return;
+        _buffer += e.payload.data;
 
-    if (_currentStreamId) {
-      const current = _msgs.find((m) => m.id === _currentStreamId);
-      const existing = current?.content || '';
-      updateMsg(_currentStreamId, existing + data);
+        if (_currentId) {
+          // Strip ANSI and update the current assistant message
+          const clean = _buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '').replace(/\x1b\[.*?[a-zA-Z]/g, '');
+          _msgs = _msgs.map((m) => m.id === _currentId ? { ...m, content: clean } : m);
+          notify();
+        }
+      });
+
+      await listen('pty-exit', (e: { payload: string }) => {
+        if (e.payload === SESSION) {
+          _spawned = false;
+          _loading = false;
+          notify();
+        }
+      });
     }
-  });
-
-  _unlistenExit = await listen('pty-exit', (event: { payload: string }) => {
-    if (event.payload !== SESSION) return;
-    if (_currentStreamId) {
-      // Clean ANSI codes from final message
-      const msg = _msgs.find((m) => m.id === _currentStreamId);
-      if (msg) {
-        const clean = msg.content.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '').trim();
-        updateMsg(_currentStreamId, clean || 'No response', false);
-      }
-    }
-    _loading = false;
-    _currentStreamId = '';
+  } catch (err) {
+    _spawned = false;
+    _msgs = [..._msgs, { id: `err-${Date.now()}`, role: 'assistant', content: `Failed to start claude: ${err instanceof Error ? err.message : String(err)}\n\nInstall: npm i -g @anthropic-ai/claude-code`, done: true }];
     notify();
-  });
+  }
 };
 
-const runClaude = async (prompt: string, cwd: string) => {
+const sendMessage = async (text: string, cwd: string) => {
+  if (_loading) return;
   _input = '';
-  push('user', prompt);
+
+  await spawnClaude(cwd);
+
+  // Add user message
+  _msgs = [..._msgs, { id: `u-${Date.now()}`, role: 'user', content: text, done: true }];
   _loading = true;
+  _buffer = '';
+
+  // Add empty assistant message for streaming
+  _currentId = `a-${Date.now()}`;
+  _msgs = [..._msgs, { id: _currentId, role: 'assistant', content: '', done: false }];
   notify();
 
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    await setupListeners();
+    // Send the message to claude's stdin — it's already running interactively
+    const escaped = text.replace(/\n/g, ' ');
+    await invoke('pty_write', { sessionId: SESSION, data: escaped + '\n' });
 
-    // Kill any existing session
-    await invoke('pty_kill', { sessionId: SESSION }).catch(() => {});
+    // Claude will respond via the pty-output listener above
+    // We detect "done" when output stops for a bit
+    let lastLen = 0;
+    const checkDone = setInterval(() => {
+      const msg = _msgs.find((m) => m.id === _currentId);
+      if (!msg) { clearInterval(checkDone); return; }
+      if (msg.content.length === lastLen && msg.content.length > 0) {
+        // Output hasn't changed — likely done
+        clearInterval(checkDone);
+        _msgs = _msgs.map((m) => m.id === _currentId ? { ...m, done: true } : m);
+        _loading = false;
+        _currentId = '';
+        _buffer = '';
+        notify();
+      }
+      lastLen = msg.content.length;
+    }, 2000);
 
-    // Start new PTY
-    await invoke('pty_spawn', { sessionId: SESSION, cwd, cols: 120, rows: 40 });
-
-    // Create streaming assistant message
-    _currentStreamId = push('assistant', '', true);
-
-    // Build command
-    const escaped = prompt.replace(/'/g, "'\\''");
-    const continueFlag = _sessionContinue ? ' --continue' : '';
-    const cmd = `claude --print${continueFlag} '${escaped}'\n`;
-
-    _sessionContinue = true;
-
-    // Send command to PTY
-    await invoke('pty_write', { sessionId: SESSION, data: cmd });
-
-  } catch (err: unknown) {
+  } catch (err) {
     _loading = false;
-    _currentStreamId = '';
-    push('system', `Error: ${err instanceof Error ? err.message : String(err)}`);
+    _currentId = '';
+    notify();
   }
 };
 
@@ -113,14 +123,13 @@ const ClaudeCodePanel = () => {
   const endRef = React.useRef<HTMLDivElement>(null);
   _rerender = () => { setTick((n) => n + 1); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 30); };
 
-  const send = (text?: string) => {
-    const prompt = (text || _input).trim();
+  const send = () => {
+    let prompt = _input.trim();
     if (!prompt || _loading) return;
     if (selectedFiles.length > 0) {
-      runClaude(`${prompt}\n\nContext files:\n${selectedFiles.map((f) => f.path).join('\n')}`, currentPath || '.');
-    } else {
-      runClaude(prompt, currentPath || '.');
+      prompt += ` (files: ${selectedFiles.map((f) => f.path).join(', ')})`;
     }
+    sendMessage(prompt, currentPath || '.');
   };
 
   return (
@@ -129,16 +138,13 @@ const ClaudeCodePanel = () => {
       <div style={{ padding: '10px 14px', borderBottom: `1px solid ${c.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ width: 22, height: 22, borderRadius: 6, background: `linear-gradient(135deg, ${c.orange}, #f59e0b)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', fontWeight: 700 }}>C</div>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Claude Code</span>
-        {_msgs.length > 0 && (
-          <button onClick={() => {
-            _msgs = []; _loading = false; _sessionContinue = false; _currentStreamId = '';
-            import('@tauri-apps/api/core').then(({ invoke }) => invoke('pty_kill', { sessionId: SESSION }).catch(() => {}));
-            setTick((n) => n + 1);
-          }}
-            style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 10, borderRadius: 4, border: `1px solid ${c.border}`, backgroundColor: 'transparent', color: c.muted, cursor: 'pointer' }}>
-            New Chat
-          </button>
-        )}
+        <button onClick={() => {
+          _msgs = []; _loading = false; _spawned = false; _currentId = ''; _buffer = '';
+          import('@tauri-apps/api/core').then(({ invoke }) => invoke('pty_kill', { sessionId: SESSION }).catch(() => {}));
+          setTick((n) => n + 1);
+        }} style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 10, borderRadius: 4, border: `1px solid ${c.border}`, backgroundColor: 'transparent', color: c.muted, cursor: 'pointer' }}>
+          New Chat
+        </button>
       </div>
 
       {/* File chips */}
@@ -157,23 +163,21 @@ const ClaudeCodePanel = () => {
             <div style={{ width: 40, height: 40, borderRadius: 10, background: `linear-gradient(135deg, ${c.orange}, #f59e0b)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: '#fff', fontWeight: 700 }}>C</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Claude Code</div>
             <div style={{ fontSize: 12, color: c.muted, lineHeight: 1.6, maxWidth: 280 }}>
-              Runs the real Claude Code CLI.<br />Streams responses as they come.<br />Uses your existing Claude auth.
+              Live Claude Code session.<br />Responses stream in real-time.<br />Uses your Claude auth.
             </div>
           </div>
         ) : (
           _msgs.map((m) => (
             <div key={m.id} style={{ padding: '8px 14px', margin: '2px 0' }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: m.role === 'user' ? c.blue : m.role === 'system' ? '#f87171' : c.orange, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Claude' : 'System'}
-                {m.streaming && <span style={{ marginLeft: 6, fontSize: 9, opacity: 0.6 }}>streaming...</span>}
+              <div style={{ fontSize: 10, fontWeight: 600, color: m.role === 'user' ? c.blue : c.orange, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {m.role === 'user' ? 'You' : 'Claude'}
+                {!m.done && m.role === 'assistant' && <span style={{ marginLeft: 6, color: c.orange, fontSize: 9 }}>streaming...</span>}
               </div>
               <div style={{
-                fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                color: m.role === 'system' ? '#f87171' : c.text,
-                fontFamily: m.role === 'assistant' ? 'inherit' : 'inherit',
+                fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: c.text,
                 ...(m.role === 'assistant' ? { padding: '10px 12px', borderRadius: 8, backgroundColor: 'rgba(var(--xp-border-rgb, 41,46,66), 0.2)', border: `1px solid ${c.border}` } : {}),
               }}>
-                {m.content.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '') || (m.streaming ? '...' : '')}
+                {m.content || (m.role === 'assistant' && !m.done ? '...' : '')}
               </div>
             </div>
           ))
@@ -191,7 +195,7 @@ const ClaudeCodePanel = () => {
           disabled={_loading}
           style={{ flex: 1, padding: '9px 12px', fontSize: 12, borderRadius: 8, border: `1px solid ${c.border}`, backgroundColor: c.surface, color: c.text, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
         />
-        <button onClick={() => send()} disabled={!_input.trim() || _loading}
+        <button onClick={send} disabled={!_input.trim() || _loading}
           style={{ padding: '9px 16px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: _input.trim() && !_loading ? 'pointer' : 'default', backgroundColor: _input.trim() && !_loading ? c.orange : `${c.orange}40`, color: '#fff', flexShrink: 0 }}>
           ↑
         </button>
