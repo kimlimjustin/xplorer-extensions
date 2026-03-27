@@ -3,7 +3,6 @@ import { Sidebar, Command, useCurrentPath, useSelectedFiles, type XplorerAPI } f
 
 let api: XplorerAPI;
 
-// Module-level state — survives sandbox re-renders, no hooks needed
 let _messages: Array<{ id: string; role: string; content: string }> = [];
 let _isLoading = false;
 let _input = '';
@@ -16,32 +15,47 @@ const addMsg = (role: string, content: string) => {
   notify();
 };
 
-const sendMessage = async (text: string, currentPath: string, selectedFiles: Array<{ name: string; path: string }>) => {
-  const msg = text.trim();
-  if (!msg || _isLoading) return;
+const runClaude = async (prompt: string, cwd: string) => {
   _input = '';
-  addMsg('user', msg);
+  addMsg('user', prompt);
   _isLoading = true;
   notify();
 
   try {
-    const history = _messages.filter((m) => m.role !== 'system').slice(-10);
-    const aiMessages = [
-      { role: 'system', content: `You are Claude Code, an AI assistant in Xplorer. Path: ${currentPath}. ${selectedFiles.length > 0 ? `Files: ${selectedFiles.map((f) => f.name).join(', ')}` : ''}. Be concise.` },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user', content: msg },
-    ];
-    const response = await api.ai.chat(aiMessages);
-    addMsg('assistant', response);
+    // Run the actual claude CLI with --print flag
+    const result = await api.commands.execute('execute_command', {
+      command: `claude --print "${prompt.replace(/"/g, '\\"')}"`,
+      working_dir: cwd,
+    });
+
+    if (result && typeof result === 'object') {
+      const r = result as { stdout?: string; stderr?: string; exit_code?: number };
+      if (r.stdout) {
+        addMsg('assistant', r.stdout.trim());
+      } else if (r.stderr) {
+        addMsg('system', r.stderr.trim());
+      } else {
+        addMsg('system', 'No response from Claude CLI');
+      }
+    } else if (typeof result === 'string') {
+      addMsg('assistant', result);
+    } else {
+      addMsg('system', 'No response from Claude CLI');
+    }
   } catch (err: unknown) {
-    addMsg('system', `Error: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('not found') || msg.includes('No such file')) {
+      addMsg('system', 'Claude CLI not found. Install it: npm install -g @anthropic-ai/claude-code');
+    } else {
+      addMsg('system', `Error: ${msg}`);
+    }
   } finally {
     _isLoading = false;
     notify();
   }
 };
 
-const SUGGESTIONS = ['Explain the selected file', 'Find bugs in this code', 'Refactor for readability', 'Add error handling', 'Write tests for this'];
+const SUGGESTIONS = ['Explain this project', 'Find bugs in this code', 'Refactor for readability', 'Write tests', 'What does this file do?'];
 
 const st = {
   box: { display: 'flex', flexDirection: 'column' as const, height: '100%', color: 'var(--xp-text, #c0caf5)', fontSize: 13 },
@@ -61,15 +75,23 @@ const st = {
 const ClaudeCodePanel = () => {
   const currentPath = useCurrentPath();
   const selectedFiles = useSelectedFiles();
-  // Force re-render trick: increment counter on state changes
   const [, setTick] = React.useState(0);
   _rerender = () => setTick((n) => n + 1);
 
-  const msgs = _messages; // plain array, never undefined
+  const msgs = _messages;
   const loading = _isLoading;
 
   const doSend = (text?: string) => {
-    sendMessage(text || _input, currentPath, selectedFiles);
+    const prompt = text || _input;
+    if (!prompt.trim() || loading) return;
+
+    // Add file context to the prompt if files are selected
+    let fullPrompt = prompt;
+    if (selectedFiles.length > 0) {
+      fullPrompt = `${prompt}\n\nFiles: ${selectedFiles.map((f) => f.path).join(', ')}`;
+    }
+
+    runClaude(fullPrompt, currentPath || '.');
   };
 
   if (msgs.length === 0 && !loading) {
@@ -79,14 +101,14 @@ const ClaudeCodePanel = () => {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, padding: 24, textAlign: 'center' }}>
           <div style={st.icon}>C</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>Claude Code</div>
-          <div style={{ fontSize: 12, color: 'var(--xp-text-muted)', lineHeight: 1.5 }}>Ask Claude to edit files, explain code, fix bugs, and more.</div>
+          <div style={{ fontSize: 12, color: 'var(--xp-text-muted)', lineHeight: 1.5 }}>Runs the real Claude Code CLI. Select files for context.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 260 }}>
             {SUGGESTIONS.map((s) => <button key={s} style={st.sug} onClick={() => doSend(s)}>{s}</button>)}
           </div>
         </div>
         <div style={st.inp}>
-          <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }} placeholder="Ask Claude..." style={st.ta as React.CSSProperties} />
-          <button onClick={() => doSend()} disabled={!_input.trim()} style={{ ...st.btn, opacity: _input.trim() ? 1 : 0.5 }}>Send</button>
+          <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }} placeholder="Ask Claude Code..." style={st.ta as React.CSSProperties} />
+          <button onClick={() => doSend()} disabled={!_input.trim()} style={{ ...st.btn, opacity: _input.trim() ? 1 : 0.5 }}>Run</button>
         </div>
       </div>
     );
@@ -101,18 +123,18 @@ const ClaudeCodePanel = () => {
       </div>
       {(selectedFiles.length > 0 || currentPath) && (
         <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--xp-text-muted)', borderBottom: '1px solid rgba(var(--xp-border-rgb), 0.3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          ctx: {selectedFiles.length > 0 ? selectedFiles.map((f) => f.name).join(', ') : currentPath?.split(/[/\\]/).pop()}
+          cwd: {currentPath?.split(/[/\\]/).pop()} {selectedFiles.length > 0 ? `| ${selectedFiles.length} files` : ''}
         </div>
       )}
       <div style={st.msgs}>
         {msgs.map((m) => (
           <div key={m.id} style={{ ...st.msg, ...(m.role === 'user' ? st.usr : m.role === 'assistant' ? st.ast : st.sys) }}>{m.content}</div>
         ))}
-        {loading && <div style={{ ...st.msg, ...st.ast, opacity: 0.5 }}>Thinking...</div>}
+        {loading && <div style={{ ...st.msg, ...st.ast, opacity: 0.5 }}>Running claude --print...</div>}
       </div>
       <div style={st.inp}>
-        <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) doSend(); }} placeholder="Ask Claude..." style={st.ta as React.CSSProperties} disabled={loading} />
-        <button onClick={() => doSend()} disabled={!_input.trim() || loading} style={{ ...st.btn, opacity: !_input.trim() || loading ? 0.5 : 1 }}>{loading ? '...' : 'Send'}</button>
+        <input value={_input} onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) doSend(); }} placeholder="Ask Claude Code..." style={st.ta as React.CSSProperties} disabled={loading} />
+        <button onClick={() => doSend()} disabled={!_input.trim() || loading} style={{ ...st.btn, opacity: !_input.trim() || loading ? 0.5 : 1 }}>{loading ? '...' : 'Run'}</button>
       </div>
     </div>
   );
@@ -123,7 +145,7 @@ Sidebar.register({
   title: 'Claude Code',
   icon: 'terminal',
   location: 'right',
-  permissions: ['file:read', 'ui:panels', 'ai:chat', 'ai:read'],
+  permissions: ['file:read', 'ui:panels', 'system:exec'],
   render: () => <ClaudeCodePanel />,
   onActivate: (xplorerApi) => { api = xplorerApi; },
 });
