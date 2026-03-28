@@ -333,8 +333,12 @@ function EmptyState() {
 
 let chatApi: XplorerAPI;
 
+// Module-level messages — immune to sandbox hook issues
+let _aiChatMessages: ChatMessage[] = [];
+
 function AIChatPanel(_props: SidebarRenderProps) {
-  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+  const [, _forceRender] = React.useState(0);
+  const messages = _aiChatMessages;
   const [input, setInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [models, setModels] = React.useState<AIModel[]>([]);
@@ -401,17 +405,18 @@ function AIChatPanel(_props: SidebarRenderProps) {
     if (!text || isLoading || !chatApi) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text, timestamp: Date.now() };
-    setMessages((prev) => [...prev, userMsg]);
+    _aiChatMessages = [..._aiChatMessages, userMsg];
+    _forceRender((n) => n + 1);
     setInput('');
     setIsLoading(true);
 
     try {
-      const conversationHistory = [...messages, userMsg].map((m) => ({
+      const conversationHistory = [..._aiChatMessages].map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
-      const response = await chatApi.ai.chat(selectedModel, conversationHistory);
+      const response = await chatApi.ai.chat(conversationHistory);
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',
@@ -419,14 +424,16 @@ function AIChatPanel(_props: SidebarRenderProps) {
         timestamp: Date.now(),
         model: selectedModel,
       };
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
+      _aiChatMessages = [..._aiChatMessages, assistantMsg];
+      _forceRender((n) => n + 1);
+    } catch (err: unknown) {
       const errorMsg: ChatMessage = {
         role: 'assistant',
-        content: `Error: ${err?.message || err || 'Failed to get response'}`,
+        content: `Error: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
       };
-      setMessages((prev) => [...prev, errorMsg]);
+      _aiChatMessages = [..._aiChatMessages, errorMsg];
+      _forceRender((n) => n + 1);
     } finally {
       setIsLoading(false);
     }
@@ -440,7 +447,8 @@ function AIChatPanel(_props: SidebarRenderProps) {
   };
 
   const clearMessages = () => {
-    setMessages([]);
+    _aiChatMessages = [];
+    _forceRender((n) => n + 1);
   };
 
   // Inject pulse animation style
@@ -485,7 +493,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>AI Chat</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {messages.length > 0 && (
+            {(messages || []).length > 0 && (
               <button
                 onClick={clearMessages}
                 title="Clear chat"
@@ -574,7 +582,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               marginTop: 6, fontSize: 11, color: 'var(--xp-text-muted)',
             }}>
-              <span>Messages: {messages.length}</span>
+              <span>Messages: {(messages || []).length}</span>
               <span>{ollamaConnected ? 'Local + Cloud models' : 'Cloud models only'}</span>
             </div>
           </div>
@@ -589,7 +597,7 @@ function AIChatPanel(_props: SidebarRenderProps) {
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               Model: {selectedModel.replace('claude-', '').substring(0, 16)}
             </span>
-            <span>{messages.length > 0 ? `${messages.length} msgs` : ''}</span>
+            <span>{(messages || []).length > 0 ? `${(messages || []).length} msgs` : ''}</span>
           </div>
         )}
       </div>
@@ -599,10 +607,10 @@ function AIChatPanel(_props: SidebarRenderProps) {
         flex: '1 1 0%', minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
         padding: '12px 10px',
       }}>
-        {messages.length === 0 && !isLoading ? (
+        {(messages || []).length === 0 && !isLoading ? (
           <EmptyState />
         ) : (
-          messages.map((msg, i) => (
+          (messages || []).map((msg, i) => (
             <MessageBubble key={`${msg.role}-${msg.timestamp}-${i}`} message={msg} />
           ))
         )}

@@ -1,348 +1,203 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React from 'react';
 import { Sidebar, Command, useCurrentPath, useSelectedFiles, type XplorerAPI } from '@xplorer/extension-sdk';
 
 let api: XplorerAPI;
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-}
+interface Msg { id: string; role: 'user' | 'assistant'; content: string; done?: boolean; }
 
-const s = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    height: '100%',
-    color: 'var(--xp-text, #c0caf5)',
-    fontSize: 13,
-  },
-  header: {
-    padding: '10px 12px',
-    borderBottom: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    background: 'linear-gradient(135deg, #d97706, #f59e0b)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    fontSize: 11,
-    color: '#fff',
-    fontWeight: 700 as const,
-  },
-  headerTitle: {
-    fontSize: 12,
-    fontWeight: 600 as const,
-  },
-  messages: {
-    flex: 1,
-    overflow: 'auto' as const,
-    padding: '8px 0',
-  },
-  message: {
-    padding: '6px 12px',
-    fontSize: 12,
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-word' as const,
-  },
-  userMsg: {
-    color: 'var(--xp-text, #c0caf5)',
-    backgroundColor: 'rgba(122, 162, 247, 0.08)',
-    borderLeft: '2px solid var(--xp-blue, #7aa2f7)',
-    margin: '2px 0',
-  },
-  assistantMsg: {
-    color: 'var(--xp-text, #c0caf5)',
-    margin: '2px 0',
-  },
-  systemMsg: {
-    color: 'var(--xp-text-muted, #565f89)',
-    fontSize: 11,
-    fontStyle: 'italic' as const,
-    margin: '2px 0',
-    padding: '4px 12px',
-  },
-  inputArea: {
-    borderTop: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    padding: '8px 10px',
-    display: 'flex',
-    gap: 6,
-  },
-  input: {
-    flex: 1,
-    padding: '7px 10px',
-    fontSize: 12,
-    borderRadius: 6,
-    border: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.5)',
-    backgroundColor: 'rgba(var(--xp-bg-rgb, 26, 27, 38), 0.5)',
-    color: 'var(--xp-text, #c0caf5)',
-    outline: 'none',
-    fontFamily: 'inherit',
-    resize: 'none' as const,
-  },
-  sendBtn: {
-    padding: '7px 12px',
-    fontSize: 12,
-    fontWeight: 500 as const,
-    borderRadius: 6,
-    border: 'none',
-    cursor: 'pointer',
-    backgroundColor: 'rgba(217, 119, 6, 0.85)',
-    color: '#fff',
-    flexShrink: 0,
-    transition: 'opacity 0.15s',
-  },
-  context: {
-    padding: '4px 12px',
-    fontSize: 10,
-    color: 'var(--xp-text-muted, #565f89)',
-    borderBottom: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.3)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    overflow: 'hidden',
-  },
-  empty: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    gap: 12,
-    padding: 24,
-    textAlign: 'center' as const,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: 600 as const,
-    color: 'var(--xp-text, #c0caf5)',
-  },
-  emptyDesc: {
-    fontSize: 12,
-    color: 'var(--xp-text-muted, #565f89)',
-    lineHeight: 1.5,
-  },
-  suggestion: {
-    padding: '6px 12px',
-    fontSize: 11,
-    borderRadius: 6,
-    border: '1px solid rgba(var(--xp-border-rgb, 41, 46, 66), 0.4)',
-    backgroundColor: 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.15)',
-    cursor: 'pointer',
-    color: 'var(--xp-text-muted, #565f89)',
-    transition: 'all 0.1s',
-    textAlign: 'left' as const,
-  },
+const SESSION = 'claude-code-live';
+let _msgs: Msg[] = [];
+let _loading = false;
+let _input = '';
+let _spawned = false;
+let _currentId = '';
+let _buffer = '';
+let _rerender: (() => void) | null = null;
+let _listening = false;
+
+const notify = () => { if (_rerender) _rerender(); };
+
+const spawnClaude = async (cwd: string) => {
+  if (_spawned) return;
+  _spawned = true;
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('pty_kill', { sessionId: SESSION }).catch(() => {});
+    await invoke('pty_spawn', { sessionId: SESSION, cwd, cols: 120, rows: 40 });
+    // Start claude in interactive mode
+    await invoke('pty_write', { sessionId: SESSION, data: 'claude\n' });
+
+    if (!_listening) {
+      _listening = true;
+      const { listen } = await import('@tauri-apps/api/event');
+
+      await listen('pty-output', (e: { payload: { session_id: string; data: string } }) => {
+        if (e.payload.session_id !== SESSION) return;
+        _buffer += e.payload.data;
+
+        if (_currentId) {
+          // Strip ANSI and update the current assistant message
+          const clean = _buffer.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '').replace(/\x1b\[.*?[a-zA-Z]/g, '');
+          _msgs = _msgs.map((m) => m.id === _currentId ? { ...m, content: clean } : m);
+          notify();
+        }
+      });
+
+      await listen('pty-exit', (e: { payload: string }) => {
+        if (e.payload === SESSION) {
+          _spawned = false;
+          _loading = false;
+          notify();
+        }
+      });
+    }
+  } catch (err) {
+    _spawned = false;
+    _msgs = [..._msgs, { id: `err-${Date.now()}`, role: 'assistant', content: `Failed to start claude: ${err instanceof Error ? err.message : String(err)}\n\nInstall: npm i -g @anthropic-ai/claude-code`, done: true }];
+    notify();
+  }
 };
 
-const SUGGESTIONS = [
-  'Explain the selected file',
-  'Find bugs in this code',
-  'Refactor for readability',
-  'Add error handling',
-  'Write tests for this',
-];
+const sendMessage = async (text: string, cwd: string) => {
+  if (_loading) return;
+  _input = '';
 
-const ClaudeCodePanel: React.FC = () => {
+  await spawnClaude(cwd);
+
+  // Add user message
+  _msgs = [..._msgs, { id: `u-${Date.now()}`, role: 'user', content: text, done: true }];
+  _loading = true;
+  _buffer = '';
+
+  // Add empty assistant message for streaming
+  _currentId = `a-${Date.now()}`;
+  _msgs = [..._msgs, { id: _currentId, role: 'assistant', content: '', done: false }];
+  notify();
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    // Send the message to claude's stdin — it's already running interactively
+    const escaped = text.replace(/\n/g, ' ');
+    await invoke('pty_write', { sessionId: SESSION, data: escaped + '\n' });
+
+    // Claude will respond via the pty-output listener above
+    // We detect "done" when output stops for a bit
+    let lastLen = 0;
+    const checkDone = setInterval(() => {
+      const msg = _msgs.find((m) => m.id === _currentId);
+      if (!msg) { clearInterval(checkDone); return; }
+      if (msg.content.length === lastLen && msg.content.length > 0) {
+        // Output hasn't changed — likely done
+        clearInterval(checkDone);
+        _msgs = _msgs.map((m) => m.id === _currentId ? { ...m, done: true } : m);
+        _loading = false;
+        _currentId = '';
+        _buffer = '';
+        notify();
+      }
+      lastLen = msg.content.length;
+    }, 2000);
+
+  } catch (err) {
+    _loading = false;
+    _currentId = '';
+    notify();
+  }
+};
+
+const c = {
+  bg: 'var(--xp-bg, #1a1b26)',
+  surface: 'var(--xp-surface, #1e1e2e)',
+  border: 'rgba(var(--xp-border-rgb, 41,46,66), 0.5)',
+  text: 'var(--xp-text, #c0caf5)',
+  muted: 'var(--xp-text-muted, #565f89)',
+  blue: 'var(--xp-blue, #7aa2f7)',
+  orange: '#d97706',
+};
+
+const ClaudeCodePanel = () => {
   const currentPath = useCurrentPath();
   const selectedFiles = useSelectedFiles();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [, setTick] = React.useState(0);
+  const endRef = React.useRef<HTMLDivElement>(null);
+  _rerender = () => { setTick((n) => n + 1); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 30); };
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const addMessage = useCallback((role: Message['role'], content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `${Date.now()}-${Math.random()}`, role, content, timestamp: Date.now() },
-    ]);
-  }, []);
-
-  const handleSend = useCallback(async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || isLoading) return;
-
-    setInput('');
-    addMessage('user', msg);
-    setIsLoading(true);
-
-    try {
-      const context = selectedFiles.length > 0
-        ? selectedFiles.map((f) => f.path).join(', ')
-        : currentPath;
-
-      const aiMessages = [
-        {
-          role: 'system',
-          content: `You are Claude Code, an AI coding assistant integrated into Xplorer file manager. The user is currently in: ${currentPath}. ${selectedFiles.length > 0 ? `Selected files: ${selectedFiles.map((f) => f.name).join(', ')}` : ''}. Help with coding tasks, file analysis, bug fixes, and refactoring. Be concise.`,
-        },
-        ...messages.filter((m) => m.role !== 'system').slice(-10).map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        { role: 'user', content: msg },
-      ];
-
-      const response = await api.ai.chat('', aiMessages, context);
-      addMessage('assistant', response);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to get response';
-      if (errMsg.includes('Ollama') || errMsg.includes('connection')) {
-        addMessage('system', 'Claude Code requires Ollama running locally. Start it with: ollama serve');
-      } else {
-        addMessage('system', `Error: ${errMsg}`);
-      }
-    } finally {
-      setIsLoading(false);
+  const send = () => {
+    let prompt = _input.trim();
+    if (!prompt || _loading) return;
+    if (selectedFiles.length > 0) {
+      prompt += ` (files: ${selectedFiles.map((f) => f.path).join(', ')})`;
     }
-  }, [input, isLoading, messages, currentPath, selectedFiles, addMessage]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
-
-  if (messages.length === 0 && !isLoading) {
-    return (
-      <div style={s.container}>
-        <div style={s.header}>
-          <div style={s.headerIcon}>C</div>
-          <span style={s.headerTitle}>Claude Code</span>
-        </div>
-        <div style={s.empty}>
-          <div style={s.headerIcon}>C</div>
-          <div style={s.emptyTitle}>Claude Code</div>
-          <div style={s.emptyDesc}>
-            Ask Claude to edit files, explain code, fix bugs, and more.
-            Select files in the explorer for context.
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 260 }}>
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                style={s.suggestion}
-                onClick={() => handleSend(suggestion)}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.3)';
-                  e.currentTarget.style.color = 'var(--xp-text, #c0caf5)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(var(--xp-border-rgb, 41, 46, 66), 0.15)';
-                  e.currentTarget.style.color = 'var(--xp-text-muted, #565f89)';
-                }}
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={s.inputArea}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Claude..."
-            rows={1}
-            style={s.input}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isLoading}
-            style={{ ...s.sendBtn, opacity: !input.trim() ? 0.5 : 1 }}
-          >
-            Send
-          </button>
-        </div>
-      </div>
-    );
-  }
+    sendMessage(prompt, currentPath || '.');
+  };
 
   return (
-    <div style={s.container}>
-      <div style={s.header}>
-        <div style={s.headerIcon}>C</div>
-        <span style={s.headerTitle}>Claude Code</span>
-        <button
-          onClick={() => setMessages([])}
-          style={{
-            marginLeft: 'auto', padding: '2px 8px', fontSize: 10,
-            borderRadius: 4, border: '1px solid rgba(var(--xp-border-rgb), 0.4)',
-            backgroundColor: 'transparent', color: 'var(--xp-text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          Clear
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', color: c.text, fontSize: 13, backgroundColor: c.bg }}>
+      {/* Header */}
+      <div style={{ padding: '10px 14px', borderBottom: `1px solid ${c.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 22, height: 22, borderRadius: 6, background: `linear-gradient(135deg, ${c.orange}, #f59e0b)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', fontWeight: 700 }}>C</div>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Claude Code</span>
+        <button onClick={() => {
+          _msgs = []; _loading = false; _spawned = false; _currentId = ''; _buffer = '';
+          import('@tauri-apps/api/core').then(({ invoke }) => invoke('pty_kill', { sessionId: SESSION }).catch(() => {}));
+          setTick((n) => n + 1);
+        }} style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 10, borderRadius: 4, border: `1px solid ${c.border}`, backgroundColor: 'transparent', color: c.muted, cursor: 'pointer' }}>
+          New Chat
         </button>
       </div>
 
-      {/* Context bar */}
-      {(selectedFiles.length > 0 || currentPath) && (
-        <div style={s.context}>
-          <span style={{ opacity: 0.5 }}>ctx:</span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selectedFiles.length > 0
-              ? selectedFiles.map((f) => f.name).join(', ')
-              : currentPath?.split(/[/\\]/).pop()}
-          </span>
+      {/* File chips */}
+      {selectedFiles.length > 0 && (
+        <div style={{ padding: '6px 14px', borderBottom: `1px solid ${c.border}`, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {selectedFiles.map((f) => (
+            <span key={f.path} style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, backgroundColor: 'rgba(122,162,247,0.1)', border: '1px solid rgba(122,162,247,0.2)', color: c.blue }}>{f.name}</span>
+          ))}
         </div>
       )}
 
       {/* Messages */}
-      <div style={s.messages}>
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            style={{
-              ...s.message,
-              ...(msg.role === 'user' ? s.userMsg : msg.role === 'assistant' ? s.assistantMsg : s.systemMsg),
-            }}
-          >
-            {msg.content}
+      <div style={{ flex: 1, overflow: 'auto', padding: '12px 0' }}>
+        {_msgs.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, padding: 24, textAlign: 'center' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: `linear-gradient(135deg, ${c.orange}, #f59e0b)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: '#fff', fontWeight: 700 }}>C</div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Claude Code</div>
+            <div style={{ fontSize: 12, color: c.muted, lineHeight: 1.6, maxWidth: 280 }}>
+              Live Claude Code session.<br />Responses stream in real-time.<br />Uses your Claude auth.
+            </div>
           </div>
-        ))}
-        {isLoading && (
-          <div style={{ ...s.message, ...s.assistantMsg, opacity: 0.5 }}>
-            Thinking...
-          </div>
+        ) : (
+          _msgs.map((m) => (
+            <div key={m.id} style={{ padding: '8px 14px', margin: '2px 0' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: m.role === 'user' ? c.blue : c.orange, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {m.role === 'user' ? 'You' : 'Claude'}
+                {!m.done && m.role === 'assistant' && <span style={{ marginLeft: 6, color: c.orange, fontSize: 9 }}>streaming...</span>}
+              </div>
+              <div style={{
+                fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: c.text,
+                ...(m.role === 'assistant' ? { padding: '10px 12px', borderRadius: 8, backgroundColor: 'rgba(var(--xp-border-rgb, 41,46,66), 0.2)', border: `1px solid ${c.border}` } : {}),
+              }}>
+                {m.content || (m.role === 'assistant' && !m.done ? '...' : '')}
+              </div>
+            </div>
+          ))
         )}
-        <div ref={messagesEndRef} />
+        <div ref={endRef} />
       </div>
 
       {/* Input */}
-      <div style={s.inputArea}>
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
+      <div style={{ padding: '10px 12px', borderTop: `1px solid ${c.border}`, display: 'flex', gap: 8 }}>
+        <input
+          value={_input}
+          onChange={(e) => { _input = e.target.value; setTick((n) => n + 1); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Ask Claude..."
-          rows={1}
-          style={s.input}
-          disabled={isLoading}
+          disabled={_loading}
+          style={{ flex: 1, padding: '9px 12px', fontSize: 12, borderRadius: 8, border: `1px solid ${c.border}`, backgroundColor: c.surface, color: c.text, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
         />
-        <button
-          onClick={() => handleSend()}
-          disabled={!input.trim() || isLoading}
-          style={{ ...s.sendBtn, opacity: !input.trim() || isLoading ? 0.5 : 1 }}
-        >
-          {isLoading ? '...' : 'Send'}
+        <button onClick={send} disabled={!_input.trim() || _loading}
+          style={{ padding: '9px 16px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none', cursor: _input.trim() && !_loading ? 'pointer' : 'default', backgroundColor: _input.trim() && !_loading ? c.orange : `${c.orange}40`, color: '#fff', flexShrink: 0 }}>
+          ↑
         </button>
       </div>
     </div>
@@ -354,11 +209,9 @@ Sidebar.register({
   title: 'Claude Code',
   icon: 'terminal',
   location: 'right',
-  permissions: ['file:read', 'ui:panels'],
+  permissions: ['file:read', 'ui:panels', 'system:exec'],
   render: () => <ClaudeCodePanel />,
-  onActivate: (xplorerApi) => {
-    api = xplorerApi;
-  },
+  onActivate: (xplorerApi) => { api = xplorerApi; },
 });
 
 Command.register({
@@ -366,7 +219,5 @@ Command.register({
   title: 'Open Claude Code',
   shortcut: 'ctrl+shift+c',
   permissions: ['ui:panels'],
-  action: async () => {
-    api?.ui.showMessage('Claude Code panel is available in the right sidebar', 'info');
-  },
+  action: async () => { api?.ui.showMessage('Claude Code panel is in the right sidebar', 'info'); },
 });

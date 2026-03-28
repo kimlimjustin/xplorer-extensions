@@ -23,7 +23,7 @@
     "category": "tool",
     "icon": "terminal",
     "keywords": ["claude", "ai", "code", "terminal", "assistant"],
-    "permissions": ["file:read", "file:write", "ui:panels", "system:exec"],
+    "permissions": ["file:read", "file:write", "ui:panels", "system:exec", "ai:chat", "ai:read"],
     "activationEvents": ["onStartup"],
     "contributes": {
       "commands": [
