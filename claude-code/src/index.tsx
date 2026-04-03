@@ -126,8 +126,16 @@ const ClaudeCodePanel = () => {
   const send = () => {
     let prompt = _input.trim();
     if (!prompt || _loading) return;
+    // Add structured context about current location and selected files
+    const contextParts: string[] = [];
+    if (currentPath && currentPath !== '.' && !currentPath.startsWith('xplorer://')) {
+      contextParts.push(`[Working directory: ${currentPath}]`);
+    }
     if (selectedFiles.length > 0) {
-      prompt += ` (files: ${selectedFiles.map((f) => f.path).join(', ')})`;
+      contextParts.push(`[Selected files: ${selectedFiles.map((f) => f.path).join(', ')}]`);
+    }
+    if (contextParts.length > 0) {
+      prompt = `${contextParts.join(' ')} ${prompt}`;
     }
     sendMessage(prompt, currentPath || '.');
   };

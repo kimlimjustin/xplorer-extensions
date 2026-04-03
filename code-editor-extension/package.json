@@ -7,7 +7,8 @@
   "scripts": {
     "build": "esbuild src/index.tsx --bundle --format=iife --outfile=dist/index.js --external:react --external:react-dom --external:@xplorer/extension-sdk --target=es2020 --jsx=transform",
     "watch": "esbuild src/index.tsx --bundle --format=iife --outfile=dist/index.js --external:react --external:react-dom --external:@xplorer/extension-sdk --target=es2020 --jsx=transform --watch",
-    "package": "npm run build && cd .. && node -e \"const{execSync}=require('child_process');execSync('tar -cf code-editor-extension.zip -C code-editor-extension .');\""
+    "package": "npm run build && cd .. && node -e \"const{execSync}=require('child_process');execSync('tar -cf code-editor-extension.zip -C code-editor-extension .');\"",
+    "dev": "touch .hotreload && esbuild src/index.tsx --bundle --outfile=dist/index.js --watch --format=iife --external:react --external:react-dom --external:@xplorer/extension-sdk --define:process.env.NODE_ENV=\\\"development\\\"; rm -f .hotreload"
   },
   "dependencies": {
     "codemirror": "^6.0.0",

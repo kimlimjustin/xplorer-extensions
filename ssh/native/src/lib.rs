@@ -166,7 +166,7 @@ lazy_static::lazy_static! {
     static ref RUNTIME: RwLock<Option<tokio::runtime::Runtime>> = RwLock::new(None);
     static ref PLUGIN_INFO: CString = CString::new(
         serde_json::json!({
-            "id": "ssh",
+            "id": "xplorer-ssh",
             "name": "SSH Manager",
             "version": "1.0.0"
         }).to_string()
@@ -663,44 +663,85 @@ fn handle_execute_command(args: serde_json::Value) -> Result<serde_json::Value, 
     }
 }
 
+/// Validate that a hostname/IP is safe (no shell metacharacters).
+fn validate_ssh_host(host: &str) -> Result<(), String> {
+    let re = regex::Regex::new(r"^[a-zA-Z0-9._:\-]+$").unwrap();
+    if !re.is_match(host) {
+        return Err(format!("Invalid SSH host: '{}'", host));
+    }
+    Ok(())
+}
+
+/// Validate that a username is safe (no shell metacharacters).
+fn validate_ssh_username(username: &str) -> Result<(), String> {
+    let re = regex::Regex::new(r"^[a-zA-Z0-9._\-]+$").unwrap();
+    if !re.is_match(username) {
+        return Err(format!("Invalid SSH username: '{}'", username));
+    }
+    Ok(())
+}
+
+/// Validate that a key path has no shell metacharacters.
+fn validate_ssh_key_path(key_path: &str) -> Result<(), String> {
+    let dangerous_chars = ['`', ';', '|', '&', '$', '>', '<', '\n', '\0', '\'', '"'];
+    for c in dangerous_chars {
+        if key_path.contains(c) {
+            return Err(format!(
+                "SSH key path contains disallowed character '{}'",
+                c
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn handle_open_terminal(args: serde_json::Value) -> Result<serde_json::Value, String> {
     let host = args.get("host").and_then(|v| v.as_str()).ok_or("Missing host")?.to_string();
     let port = args.get("port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
     let username = args.get("username").and_then(|v| v.as_str()).ok_or("Missing username")?.to_string();
     let key_path = args.get("key_path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-    let mut ssh_args = vec!["-p".to_string(), port.to_string()];
+    // Validate inputs to prevent command injection
+    validate_ssh_host(&host)?;
+    validate_ssh_username(&username)?;
+    if let Some(ref kp) = key_path {
+        validate_ssh_key_path(kp)?;
+    }
 
-    if let Some(key) = key_path {
+    // Build ssh args as a proper argument list instead of concatenating into a shell string
+    let mut ssh_args: Vec<String> = vec!["-p".to_string(), port.to_string()];
+
+    if let Some(ref key) = key_path {
         ssh_args.push("-i".to_string());
-        ssh_args.push(key);
+        ssh_args.push(key.clone());
     }
 
     ssh_args.push(format!("{}@{}", username, host));
-    let ssh_command = format!("ssh {}", ssh_args.join(" "));
 
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = Command::new("powershell");
-        cmd.args(&[
-            "-Command",
-            &format!(
-                "Start-Process powershell -ArgumentList '-NoExit', '-Command', '{}'",
-                ssh_command
-            ),
-        ]);
-        cmd.output()
+        // Use Command::new("ssh") with proper args to avoid shell injection
+        let mut cmd = Command::new("ssh");
+        cmd.args(&ssh_args);
+        // On Windows, spawn directly using START to open a new terminal window
+        let mut start_cmd = Command::new("cmd");
+        let ssh_arg_str = ssh_args.iter().map(|a| {
+            if a.contains(' ') { format!("\"{}\"", a) } else { a.clone() }
+        }).collect::<Vec<_>>().join(" ");
+        start_cmd.args(&["/C", "start", "cmd", "/K", &format!("ssh {}", ssh_arg_str)]);
+        start_cmd.output()
             .map_err(|e| format!("Failed to open SSH terminal: {}", e))?;
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let mut cmd = Command::new("sh");
-        cmd.args(&["-c", &format!("gnome-terminal -- {}", ssh_command)]);
-        if cmd.spawn().is_err() {
-            let mut cmd = Command::new("xterm");
-            cmd.args(&["-e", &ssh_command]);
-            cmd.spawn()
+        // Use Command::new("ssh").args() directly to avoid shell injection
+        let mut terminal_cmd = Command::new("gnome-terminal");
+        terminal_cmd.arg("--").arg("ssh").args(&ssh_args);
+        if terminal_cmd.spawn().is_err() {
+            let mut xterm_cmd = Command::new("xterm");
+            xterm_cmd.arg("-e").arg("ssh").args(&ssh_args);
+            xterm_cmd.spawn()
                 .map_err(|e| format!("Failed to open SSH terminal: {}", e))?;
         }
     }

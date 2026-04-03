@@ -786,9 +786,9 @@ let api: XplorerAPI;
 
 Sidebar.register({
   id: 'ide-mode',
-  title: 'Project Explorer',
-  description: 'IDE-like project sidebar with file tree, project detection, and editor integration',
-  icon: 'layout',
+  title: 'Workspace',
+  description: 'IDE-like workspace sidebar with file tree, project detection, and editor integration',
+  icon: 'folder-tree',
   location: 'right',
   permissions: ['file:read', 'directory:list', 'ui:panels'],
 

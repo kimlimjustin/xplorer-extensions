@@ -1,0 +1,14 @@
+/Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/deps/serde-f409a4996328874f.d: /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/build/serde-d226e7a5d70b6c62/out/private.rs
+
+/Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/deps/libserde-f409a4996328874f.rlib: /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/build/serde-d226e7a5d70b6c62/out/private.rs
+
+/Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/deps/libserde-f409a4996328874f.rmeta: /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/build/serde-d226e7a5d70b6c62/out/private.rs
+
+/Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/kimlim/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/build/serde-d226e7a5d70b6c62/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/kimlim/Projects/xplorer/packages/extensions/ssh/native/target/release/build/serde-d226e7a5d70b6c62/out
