@@ -22,7 +22,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "tool",
-    "icon": "terminal",
+    "icon": "bot",
     "keywords": ["claude", "ai", "code", "terminal", "assistant"],
     "permissions": ["file:read", "file:write", "ui:panels", "system:exec", "ai:chat", "ai:read"],
     "activationEvents": ["onStartup"],

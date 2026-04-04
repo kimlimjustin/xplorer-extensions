@@ -20,7 +20,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "tool",
-    "icon": "hash",
+    "icon": "file-text",
     "keywords": ["tool", "word-count", "text", "statistics"],
     "permissions": ["file:read", "ui:notifications"],
     "activationEvents": ["onStartup"],

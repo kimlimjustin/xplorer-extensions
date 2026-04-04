@@ -496,7 +496,7 @@ Sidebar.register({
   id: 'backup',
   title: 'Incremental Backup',
   description: 'Create and manage incremental backups with change tracking',
-  icon: 'archive',
+  icon: 'shield-check',
   location: 'right',
   permissions: ['file:read', 'file:write', 'ui:panels'],
   render: (props: SidebarRenderProps) => React.createElement(BackupPanel, { currentPath: (props.currentPath as string) || '', api }),

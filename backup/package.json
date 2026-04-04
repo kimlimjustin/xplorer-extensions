@@ -21,7 +21,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "panel",
-    "icon": "archive",
+    "icon": "shield-check",
     "permissions": ["file:read", "file:write", "ui:panels"],
     "activationEvents": ["onStartup"]
   }

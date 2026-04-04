@@ -22,9 +22,9 @@
     "version": "2.0.0",
     "author": "Xplorer Team",
     "category": "tool",
-    "icon": "layout",
+    "icon": "network",
     "keywords": ["architecture", "visualizer", "tree", "graph", "structure"],
-    "permissions": ["file:read", "file:write", "directory:list", "ui:panels"],
+    "permissions": ["file:read", "file:write", "directory:list", "ui:panels", "ai:chat"],
     "activationEvents": ["onStartup"],
     "contributes": {
       "commands": [

@@ -1122,9 +1122,11 @@ let extensionApi: ExtensionAPI | null = null;
 Sidebar.register({
   id: 'xplorer-ssh',
   title: 'SSH Manager',
-  icon: 'terminal',
+  icon: 'monitor',
 
-  onActivate: (api) => { extensionApi = api as ExtensionAPI; },
+  onActivate: async (api) => {
+    extensionApi = api as ExtensionAPI;
+  },
 
   render: () => {
     if (!extensionApi) {

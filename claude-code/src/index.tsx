@@ -215,7 +215,7 @@ const ClaudeCodePanel = () => {
 Sidebar.register({
   id: 'claude-code',
   title: 'Claude Code',
-  icon: 'terminal',
+  icon: 'bot',
   location: 'right',
   permissions: ['file:read', 'ui:panels', 'system:exec'],
   render: () => <ClaudeCodePanel />,

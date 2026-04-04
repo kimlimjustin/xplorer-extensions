@@ -138,39 +138,377 @@ const DEFAULT_HIDDEN_DIRS = new Set([
   'coverage',
 ]);
 
-// ── File Extension Icon Mapping ─────────────────────────────────────────────
+// ── File Type Icon SVGs ─────────────────────────────────────────────────────
 
-function getFileIcon(name: string, isDir: boolean): string {
-  if (isDir) return '\u{1F4C1}'; // folder icon
+/**
+ * Returns an inline SVG React element representing the file/folder type,
+ * styled with VS Code-like colors using CSS variables for theme compatibility.
+ */
+function getFileTypeIcon(name: string, isDir: boolean): React.ReactElement {
+  // Common SVG wrapper — 16x16, flex-shrunk, aria-hidden
+  const svg = (color: string, pathD: string, extra?: React.ReactElement) =>
+    React.createElement('svg', {
+      xmlns: 'http://www.w3.org/2000/svg',
+      width: '16',
+      height: '16',
+      viewBox: '0 0 16 16',
+      fill: 'none',
+      style: { flexShrink: 0, display: 'block' },
+      'aria-hidden': 'true',
+    },
+      React.createElement('path', { d: pathD, fill: color }),
+      extra || null,
+    );
 
-  const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() || '' : '';
+  // Folder icon (open/closed look — simple trapezoid + rectangle)
+  if (isDir) {
+    return React.createElement('svg', {
+      xmlns: 'http://www.w3.org/2000/svg',
+      width: '16',
+      height: '16',
+      viewBox: '0 0 16 16',
+      fill: 'none',
+      style: { flexShrink: 0, display: 'block' },
+      'aria-hidden': 'true',
+    },
+      // Folder body
+      React.createElement('path', {
+        d: 'M1 4.5C1 3.67 1.67 3 2.5 3H6l1.5 1.5H13.5C14.33 4.5 15 5.17 15 6V12.5C15 13.33 14.33 14 13.5 14H2.5C1.67 14 1 13.33 1 12.5V4.5Z',
+        fill: 'var(--xp-yellow, #e0af68)',
+        opacity: '0.85',
+      }),
+      // Folder tab
+      React.createElement('path', {
+        d: 'M1 4.5H6.5L7.75 5.75H15V6C15 5.17 14.33 4.5 13.5 4.5H7.5L6 3H2.5C1.67 3 1 3.67 1 4.5Z',
+        fill: 'var(--xp-yellow, #e0af68)',
+        opacity: '0.55',
+      }),
+    );
+  }
 
-  const iconMap: Record<string, string> = {
-    // Code
-    ts: '\u{1F7E6}',    tsx: '\u{1F7E6}',
-    js: '\u{1F7E8}',    jsx: '\u{1F7E8}',
-    py: '\u{1F40D}',
-    rs: '\u{2699}',
-    go: '\u{1F7E9}',
-    java: '\u{2615}',
-    cs: '\u{1F7EA}',
-    rb: '\u{1F534}',
-    cpp: '\u{1F535}',   c: '\u{1F535}',   h: '\u{1F535}',
-    // Config/Data
-    json: '\u{1F4CB}',  yaml: '\u{1F4CB}', yml: '\u{1F4CB}', toml: '\u{1F4CB}',
-    xml: '\u{1F4CB}',
-    // Web
-    html: '\u{1F310}',  css: '\u{1F3A8}',  scss: '\u{1F3A8}', less: '\u{1F3A8}',
-    // Docs
-    md: '\u{1F4DD}',    txt: '\u{1F4C4}',  pdf: '\u{1F4D5}',
-    // Images
-    png: '\u{1F5BC}',   jpg: '\u{1F5BC}',  jpeg: '\u{1F5BC}', gif: '\u{1F5BC}',
-    svg: '\u{1F5BC}',   webp: '\u{1F5BC}', ico: '\u{1F5BC}',
-    // Lock / build
-    lock: '\u{1F512}',
+  const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : '';
+
+  // Generic file page path (folded corner)
+  const genericFilePath = 'M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1zm7 0v3h3';
+
+  // Helper: two-letter badge icon (used for .ts, .js, .py, .rs, .go, etc.)
+  const badgeIcon = (bg: string, label: string) => {
+    const fontSize = label.length > 2 ? '4.5' : '5.5';
+    return React.createElement('svg', {
+      xmlns: 'http://www.w3.org/2000/svg',
+      width: '16',
+      height: '16',
+      viewBox: '0 0 16 16',
+      fill: 'none',
+      style: { flexShrink: 0, display: 'block' },
+      'aria-hidden': 'true',
+    },
+      // File page background
+      React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: bg, strokeWidth: '0.75' }),
+      // Color badge square in bottom-right
+      React.createElement('rect', { x: '7', y: '8', width: '8', height: '7', rx: '1.5', fill: bg }),
+      // Label text
+      React.createElement('text', {
+        x: '11',
+        y: '13.4',
+        textAnchor: 'middle',
+        fontSize: fontSize,
+        fontFamily: 'monospace',
+        fontWeight: 'bold',
+        fill: '#fff',
+        style: { userSelect: 'none' },
+      }, label),
+    );
   };
 
-  return iconMap[ext] || '\u{1F4C4}'; // default: page icon
+  // Helper: plain colored page icon
+  const coloredPage = (color: string) => svg(color, genericFilePath);
+
+  switch (ext) {
+    // ── TypeScript ──
+    case 'ts':
+      return badgeIcon('#3178c6', 'TS');
+    case 'tsx':
+      return badgeIcon('#3178c6', 'TSX');
+
+    // ── JavaScript ──
+    case 'js':
+      return badgeIcon('#f0db4f', 'JS');
+    case 'jsx':
+      return badgeIcon('#f0db4f', 'JSX');
+    case 'mjs':
+    case 'cjs':
+      return badgeIcon('#f0db4f', 'JS');
+
+    // ── Python ──
+    case 'py':
+      return badgeIcon('#3572A5', 'PY');
+    case 'pyx':
+    case 'pyi':
+      return badgeIcon('#3572A5', 'PY');
+
+    // ── Rust ──
+    case 'rs':
+      return badgeIcon('#ce4a0a', 'RS');
+    case 'toml':
+      // TOML can be Cargo.toml — use a gear-tinted page
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#888b9d', strokeWidth: '0.75' }),
+        React.createElement('path', {
+          d: 'M4 7h8M4 9h6M4 11h4',
+          stroke: '#888b9d',
+          strokeWidth: '0.8',
+          strokeLinecap: 'round',
+        }),
+      );
+
+    // ── Go ──
+    case 'go':
+      return badgeIcon('#00add8', 'GO');
+
+    // ── Java / Kotlin / Scala ──
+    case 'java':
+      return badgeIcon('#b07219', 'JV');
+    case 'kt':
+    case 'kts':
+      return badgeIcon('#A97BFF', 'KT');
+    case 'scala':
+      return badgeIcon('#c22d40', 'SC');
+
+    // ── C / C++ ──
+    case 'c':
+      return badgeIcon('#555599', 'C');
+    case 'h':
+      return badgeIcon('#6a737d', 'H');
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+      return badgeIcon('#f34b7d', 'C++');
+    case 'hpp':
+      return badgeIcon('#f34b7d', 'H++');
+
+    // ── C# ──
+    case 'cs':
+      return badgeIcon('#178600', 'C#');
+
+    // ── Ruby ──
+    case 'rb':
+      return badgeIcon('#cc342d', 'RB');
+
+    // ── PHP ──
+    case 'php':
+      return badgeIcon('#4F5D95', 'PHP');
+
+    // ── Swift ──
+    case 'swift':
+      return badgeIcon('#F05138', 'SW');
+
+    // ── HTML ──
+    case 'html':
+    case 'htm':
+      return badgeIcon('#e34c26', 'HTM');
+
+    // ── CSS / SCSS / Less ──
+    case 'css':
+      return badgeIcon('#563d7c', 'CSS');
+    case 'scss':
+    case 'sass':
+      return badgeIcon('#c6538c', 'SCSS');
+    case 'less':
+      return badgeIcon('#1d365d', 'LESS');
+
+    // ── JSON ──
+    case 'json':
+    case 'jsonc':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#cbcb41', strokeWidth: '0.75' }),
+        // Curly braces motif
+        React.createElement('text', {
+          x: '8',
+          y: '12.5',
+          textAnchor: 'middle',
+          fontSize: '7',
+          fontFamily: 'monospace',
+          fontWeight: 'bold',
+          fill: '#cbcb41',
+          style: { userSelect: 'none' },
+        }, '{ }'),
+      );
+
+    // ── Markdown / Text / Docs ──
+    case 'md':
+    case 'mdx':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#519aba', strokeWidth: '0.75' }),
+        React.createElement('text', {
+          x: '8',
+          y: '12.5',
+          textAnchor: 'middle',
+          fontSize: '6.5',
+          fontFamily: 'sans-serif',
+          fontWeight: 'bold',
+          fill: '#519aba',
+          style: { userSelect: 'none' },
+        }, 'MD'),
+      );
+    case 'txt':
+      return coloredPage('var(--xp-text-muted, #888)');
+    case 'pdf':
+      return badgeIcon('#cc0000', 'PDF');
+
+    // ── YAML ──
+    case 'yaml':
+    case 'yml':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#6d8086', strokeWidth: '0.75' }),
+        React.createElement('path', {
+          d: 'M4 7h8M4 9h6M4 11h4',
+          stroke: '#6d8086',
+          strokeWidth: '0.8',
+          strokeLinecap: 'round',
+        }),
+      );
+
+    // ── Shell scripts ──
+    case 'sh':
+    case 'bash':
+    case 'zsh':
+    case 'fish':
+      return badgeIcon('#4eaa25', 'SH');
+
+    // ── SQL / Database ──
+    case 'sql':
+      return badgeIcon('#e38d00', 'SQL');
+    case 'db':
+    case 'sqlite':
+    case 'sqlite3':
+      return badgeIcon('#003b57', 'DB');
+
+    // ── Images ──
+    case 'svg':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#ffb13b', strokeWidth: '0.75' }),
+        // Small circle + triangle to suggest image
+        React.createElement('circle', { cx: '6', cy: '10', r: '1', fill: '#ffb13b' }),
+        React.createElement('path', { d: 'M8 12l2-3 2 3H8Z', fill: '#ffb13b' }),
+      );
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+    case 'bmp':
+    case 'ico':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#9ece6a', strokeWidth: '0.75' }),
+        React.createElement('circle', { cx: '6', cy: '10', r: '1', fill: '#9ece6a' }),
+        React.createElement('path', { d: 'M8 12l2-3 2 3H8Z', fill: '#9ece6a' }),
+      );
+
+    // ── Lock files ──
+    case 'lock':
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', { d: genericFilePath, fill: 'var(--xp-surface-light, #2a2a3c)', stroke: '#565f89', strokeWidth: '0.75' }),
+        // Small padlock
+        React.createElement('rect', { x: '6', y: '9.5', width: '4', height: '3', rx: '0.5', fill: '#565f89' }),
+        React.createElement('path', { d: 'M6.5 9.5V8.5a1.5 1.5 0 013 0v1', stroke: '#565f89', strokeWidth: '0.75' }),
+      );
+
+    // ── Git ──
+    case 'gitignore':
+    case 'gitattributes':
+    case 'gitmodules':
+      return coloredPage('#f05033');
+
+    // ── Env / config ──
+    case 'env':
+      return coloredPage('var(--xp-green, #9ece6a)');
+
+    // ── Dockerfile ──
+    case 'dockerfile':
+      return badgeIcon('#0db7ed', 'DO');
+
+    // ── Default generic file ──
+    default:
+      return React.createElement('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '16',
+        height: '16',
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        style: { flexShrink: 0, display: 'block' },
+        'aria-hidden': 'true',
+      },
+        React.createElement('path', {
+          d: genericFilePath,
+          fill: 'var(--xp-surface-light, #2a2a3c)',
+          stroke: 'var(--xp-text-muted, #565f89)',
+          strokeWidth: '0.75',
+        }),
+        React.createElement('path', {
+          d: 'M4 7h8M4 9h6M4 11h4',
+          stroke: 'var(--xp-text-muted, #565f89)',
+          strokeWidth: '0.8',
+          strokeLinecap: 'round',
+        }),
+      );
+  }
 }
 
 // ── FileTreeNode Component ──────────────────────────────────────────────────
@@ -253,7 +591,7 @@ function FileTreeNode({
     }
   }, [entry.path, api, hiddenDirs]);
 
-  const icon = getFileIcon(entry.name, entry.is_dir);
+  const icon = getFileTypeIcon(entry.name, entry.is_dir);
   const arrow = entry.is_dir ? (expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0';
 
   return React.createElement('div', null,
@@ -289,10 +627,8 @@ function FileTreeNode({
           color: 'var(--xp-text-muted, #888)',
         },
       }, arrow),
-      // Icon
-      React.createElement('span', {
-        style: { flexShrink: 0, fontSize: '13px' },
-      }, icon),
+      // Icon (inline SVG React element)
+      icon,
       // Name
       React.createElement('span', {
         style: {
@@ -788,7 +1124,7 @@ Sidebar.register({
   id: 'ide-mode',
   title: 'Workspace',
   description: 'IDE-like workspace sidebar with file tree, project detection, and editor integration',
-  icon: 'folder-tree',
+  icon: 'list-tree',
   location: 'right',
   permissions: ['file:read', 'directory:list', 'ui:panels'],
 

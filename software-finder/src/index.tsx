@@ -904,7 +904,7 @@ Sidebar.register({
   id: 'xplorer-software-finder',
   title: 'Software Finder',
   description: 'Find installation paths of popular software',
-  icon: 'search',
+  icon: 'app-window',
   permissions: ['file:read', 'directory:list', 'ui:panels'],
   onActivate: (injectedApi) => {
     api = injectedApi;

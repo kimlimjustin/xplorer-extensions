@@ -568,7 +568,7 @@ Sidebar.register({
   id: 'batch-image',
   title: 'Batch Image Processor',
   description: 'Batch resize, convert, and compress images',
-  icon: 'image',
+  icon: 'images',
   location: 'right',
   permissions: ['files:read', 'files:write'],
   render: (props: SidebarRenderProps) => React.createElement(BatchImagePanel, {

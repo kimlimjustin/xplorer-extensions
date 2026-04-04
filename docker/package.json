@@ -21,7 +21,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "tool",
-    "icon": "package",
+    "icon": "container",
     "permissions": ["system:commands"],
     "activationEvents": ["onStartup"]
   }

@@ -21,7 +21,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "editor",
-    "icon": "image",
+    "icon": "paintbrush",
     "keywords": ["editor", "image", "rotate", "flip", "crop", "brightness", "contrast", "grayscale"],
     "permissions": ["file:read", "file:write"],
     "activationEvents": ["onStartup"],

@@ -21,7 +21,7 @@
     "version": "1.0.0",
     "author": "Xplorer Team",
     "category": "panel",
-    "icon": "layout",
+    "icon": "list-tree",
     "keywords": ["ide", "project", "sidebar", "file-tree"],
     "dependencies": ["code-editor"],
     "permissions": ["file:read", "directory:list", "ui:panels"],
@@ -32,7 +32,7 @@
           "id": "ide-mode",
           "title": "Workspace",
           "location": "right",
-          "icon": "folder-tree"
+          "icon": "list-tree"
         }
       ]
     }
